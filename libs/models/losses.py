@@ -21,7 +21,4 @@ def heatmap_loss(pred, gt):
         loss = loss - neg_loss
     else:
         loss = loss - (pos_loss + neg_loss) / num_pos
-    # print("positive loss:", pos_loss.item())
-    # print("negative loss:", neg_loss.item())
-    # print("loss:", loss.item())
     return loss

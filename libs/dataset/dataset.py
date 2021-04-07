@@ -132,22 +132,24 @@ class KeypointDataset(BaseDataset):
         Y = self._process_kps_annotation(self.annotations[idx])
 
         if self.preprocess_func is not None:
-            X, Y = self.preprocess_func(X, Y)
+            X, Y = self.preprocess_func(X, Y)   # resize image
 
         if self.normalize_func is not None:
             X = self.normalize_func(X)
 
         if self.augmentation is not None:
             X, Y = self.augmentation.transform(X, Y)
+
         h, w, c = X.shape
         Y = heatmap_from_kps((h//self.downsampling_factor, w//self.downsampling_factor, self._num_classes),
-                             Y, radius=self.radius)
+                             self._downsample_heatmap_kps(Y), radius=self.radius)
 
         X = torch.from_numpy(X).permute(2, 0, 1)
         Y = torch.from_numpy(Y).permute(2, 0, 1)
         return X, Y
 
-    def _process_kps_annotation(self, labels, visible_only=True):
+    @staticmethod
+    def _process_kps_annotation(labels, visible_only=True):
         """
         return: kps_ [[x1, y1, classId], ...]
         """
@@ -158,8 +160,12 @@ class KeypointDataset(BaseDataset):
             for i, (x, y, v) in enumerate(object_kps):
                 if visible_only and v != 2:
                     continue
-                kps_.append([x//self.downsampling_factor, y//self.downsampling_factor, i])
+                kps_.append([x, y, i])
         return kps_
+
+    def _downsample_heatmap_kps(self, kps):
+        kps[:, :2] /= self.downsampling_factor
+        return kps
 
 
 class Resize:
@@ -169,10 +175,10 @@ class Resize:
 
     def __call__(self, img, kps):
         resized_img, ratio, (dw, dh) = letterbox(img, new_shape=(self.h, self.w), auto=not self.training)
-        kps_loc = np.asarray(kps, dtype=np.float)
-        kps_loc[:, :2] *= ratio
-        kps_loc[:, 0] += dw
-        kps_loc[:, 1] += dh
-        return resized_img, kps
+        kps_resized = np.asarray(kps, dtype=np.float)
+        kps_resized[:, :2] *= ratio
+        kps_resized[:, 0] += dw
+        kps_resized[:, 1] += dh
+        return resized_img, kps_resized
 
 

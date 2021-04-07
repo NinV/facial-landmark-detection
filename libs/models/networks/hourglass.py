@@ -123,7 +123,7 @@ class StackedHourglass(nn.Module):
 
         # networks prediction
         self.hm = nn.Sequential(nn.Conv2d(dims[1][0], num_classes, kernel_size=3, padding=1, stride=1),
-                                nn.Softmax()
+                                nn.Sigmoid()
                                 )
 
     def forward(self, x):
