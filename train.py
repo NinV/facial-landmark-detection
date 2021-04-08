@@ -111,7 +111,7 @@ def main(args):
                               args.images,
                               keypoint_label_names=keypoint_label_names,
                               downsampling_factor=4,
-                              in_memory=False,
+                              in_memory=args.in_memory,
                               radius=args.radius)
 
     num_training = int(len(dataset) * args.split)
