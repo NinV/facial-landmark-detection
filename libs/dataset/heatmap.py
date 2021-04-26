@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 
@@ -135,3 +136,27 @@ def draw_msra_gaussian(heatmap, center, sigma):
         heatmap[img_y[0]:img_y[1], img_x[0]:img_x[1]],
         g[g_y[0]:g_y[1], g_x[0]:g_x[1]])
     return heatmap
+
+
+def decode_heatmap(hm, kernel=3, num_classes=15, conf=0.5):
+    """
+    hm : (1, c, h, w) pytorch tensor
+    """
+    pad = (kernel - 1) // 2
+    hmax = torch.nn.functional.max_pool2d(hm, (kernel, kernel), stride=1, padding=pad)
+    keep = (hmax == hm).float()
+    hm_reduce = (hm * keep)[0]
+
+    # find indices
+    kps = {}
+    for c in range(num_classes):
+        # only one keypoint which has highest confidence is selected for each landmark class.
+        # The selected keypoint's confidence must higher than the "conf" threshold.
+        indices_y, indices_x = torch.logical_and(hm_reduce[c] > conf,
+                                                 hm_reduce[c] == torch.max(hm_reduce[c])).nonzero(as_tuple=True)
+
+        indices_x = indices_x.tolist()
+        indices_y = indices_y.tolist()
+        if indices_x:
+            kps[c] = (indices_x[0], indices_y[0])
+    return kps
