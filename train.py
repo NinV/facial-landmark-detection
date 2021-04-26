@@ -9,6 +9,7 @@ import wandb
 from libs.models.networks.hourglass import StackedHourglass
 from libs.dataset.dataset import KeypointDataset
 from libs.models.losses import heatmap_loss
+from libs.dataset.heatmap import decode_heatmap
 
 
 def parse_args():
@@ -48,7 +49,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device):
     running_loss = 0.0
     for i, data in enumerate(loader):
         # get the inputs; data is a list of [inputs, labels]
-        inputs, labels = data
+        inputs, labels, _ = data
         num_samples = inputs.size()[0]
         inputs = inputs.to(device, dtype=torch.float)
         labels = labels.to(device, dtype=torch.float)
@@ -76,12 +77,15 @@ def run_validation(net, loader, epoch, device):
     with torch.no_grad():
         running_loss = 0.0
         for i, data in enumerate(loader):
-            inputs, labels = data
+            inputs, labels, transform_params = data
             inputs = inputs.to(device, dtype=torch.float)
             labels = labels.to(device, dtype=torch.float)
             outputs = net(inputs)
             loss = heatmap_loss(outputs, labels)
             running_loss += loss.item()
+
+            for hm in outputs:
+                kps_from_hm = decode_heatmap(hm)
 
     running_loss /= len(loader.dataset)
     wandb.log({'val_loss': running_loss, 'epoch': epoch})
@@ -117,7 +121,7 @@ def main(args):
     num_training = int(len(dataset) * args.split)
     num_testing = len(dataset) - num_training
     training_set, test_set = random_split(dataset, [num_training, num_testing],
-                                           generator=torch.Generator().manual_seed(args.seed))
+                                          generator=torch.Generator().manual_seed(args.seed))
 
     train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
@@ -148,4 +152,3 @@ def main(args):
 if __name__ == '__main__':
     args = parse_args()
     main(args)
-

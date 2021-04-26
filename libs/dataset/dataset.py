@@ -51,46 +51,6 @@ class BaseDataset(Dataset):
 
     def __len__(self):
         return len(self._image_ids)
-        # return 10
-
-# class DetectionDataset(BaseDataset):
-#     def __init__(self, *args, **kwargs):
-#         super(DetectionDataset, self).__init__(*args, **kwargs)
-#         self.annotations = {}
-#         self.object_label_names = {}
-#
-#         self._parse_label_file()
-#
-#     def _parse_label_file(self):
-#         """
-#         for COCO format
-#         """
-#         for ann in self.annotation_file_data.annotations:
-#             if ann.image_id in self.annotations:
-#                 self.annotations[ann.image_id].append([ann.bbox] + [ann.category_id])
-#             else:
-#                 self.annotations[ann.image_id] = [[ann.bbox] + [ann.category_id]]
-#
-#         for cat in self.annotation_file_data.categories:
-#             self.object_label_names[cat.id] = cat.name
-#
-#         self._num_classes = len(self.object_label_names)
-#
-#     def __getitem__(self, idx):
-#         idx = self._image_ids[idx]
-#
-#         if not self.in_memory:
-#             X = load_image(self.images[idx])
-#         else:
-#             X = self.images[idx]
-#         X = self.normalize_func(X)
-#         Y = self.annotations[idx]
-#         if self.augmentation is not None:
-#             X, Y = self.augmentation.transform(X, Y)
-#         h, w, c = X.shape
-#         Y = heatmap_from_objects((h, w, self._num_classes), Y)
-#         X = torch.from_numpy(X).permute(2, 0, 1).to(self.device)
-#         return X, Y
 
 
 class KeypointDataset(BaseDataset):
@@ -116,12 +76,10 @@ class KeypointDataset(BaseDataset):
             else:
                 self.annotations[ann.image_id] = [[ann.bbox + [ann.category_id]] + [ann.keypoints]]
 
-        # for cat in data.categories:
-            # self.object_label_names[cat.id] = cat.name
-            # self.keypoint_label_names[cat.]
         self._num_classes = len(self.keypoint_label_names)
 
     def __getitem__(self, idx):
+        transform_params = None
         idx = self._image_ids[idx]
 
         if not self.in_memory:
@@ -132,7 +90,7 @@ class KeypointDataset(BaseDataset):
         Y = self._process_kps_annotation(self.annotations[idx])
 
         if self.preprocess_func is not None:
-            X, Y = self.preprocess_func(X, Y)   # resize image
+            X, Y, transform_params = self.preprocess_func(X, Y)   # resize image
 
         if self.normalize_func is not None:
             X = self.normalize_func(X)
@@ -146,7 +104,12 @@ class KeypointDataset(BaseDataset):
 
         X = torch.from_numpy(X).permute(2, 0, 1)
         Y = torch.from_numpy(Y).permute(2, 0, 1)
-        return X, Y
+        if transform_params is None:
+
+            transform_params = torch.tensor([])
+        else:
+            transform_params = torch.tensor(transform_params)
+        return X, Y, transform_params
 
     @staticmethod
     def _process_kps_annotation(labels, visible_only=True):
@@ -176,9 +139,19 @@ class Resize:
     def __call__(self, img, kps):
         resized_img, ratio, (dw, dh) = letterbox(img, new_shape=(self.h, self.w), auto=not self.training)
         kps_resized = np.asarray(kps, dtype=np.float)
-        kps_resized[:, :2] *= ratio
+        kps_resized[:, :2] *= ratio         # ratio = [ratio_w, ratio_h]
         kps_resized[:, 0] += dw
         kps_resized[:, 1] += dh
-        return resized_img, kps_resized
 
+        return resized_img, kps_resized, [*ratio, dw, dh]
 
+    @staticmethod
+    def inverse_resize(kps, ratio, dw, dh):
+        if not isinstance(kps, np.ndarray):
+            kps_ = np.asarray(kps, dtype=np.float)
+        else:
+            kps_ = kps.copy()
+        kps_[:, 0] -= dw
+        kps_[:, 1] -= dh
+        kps_[:, :2] /= ratio
+        return kps_
