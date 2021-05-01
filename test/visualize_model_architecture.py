@@ -8,13 +8,15 @@ from torchsummary import summary
 from torch.utils.tensorboard import SummaryWriter
 
 from libs.models.networks.hourglass import Hourglass, StackedHourglass
+from libs.models.networks.models import HGLandmarkModel
 
 
 dims = [[256, 256, 384], [384, 384, 512]]
 image_size = 512, 512
 
 device = "cuda"     # or device="cpu"
-model = StackedHourglass(3, dims).to(device=device)
+# model = StackedHourglass(3, dims).to(device=device)
+model = HGLandmarkModel(3, dims, 15).to(device=device)
 
 # reduce memory usage
 with torch.no_grad():

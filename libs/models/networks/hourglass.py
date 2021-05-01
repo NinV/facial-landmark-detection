@@ -80,7 +80,7 @@ class Hourglass(nn.Module):
     def __init__(self, in_channels, dims, n=0):
         super(Hourglass, self).__init__()
         if n == 0:
-            self.pre = residual(in_channels, dims[0])
+            self.pre = residual(in_channels, dims[0])  # change channel size: in_channels -> dims[0]
             curr_dim = dims[0]
         else:
             self.pre = None
@@ -119,11 +119,11 @@ class StackedHourglass(nn.Module):
         """
         super(StackedHourglass, self).__init__()
         self.hg1 = Hourglass(in_channels, dims[0])
-        self.hg2 = Hourglass(dims[0][-1], dims[1])
-        self.inter_layer = residual(dims[0][1], dims[1][0])
+        self.hg2 = Hourglass(dims[0][0], dims[1])
+        # self.inter_layer = residual(dims[0][1], dims[1][0])
 
     def forward(self, x):
         x = self.hg1(x)
-        x = self.inter_layer(x)
+        # x = self.inter_layer(x)
         out = self.hg2(x)
         return out
