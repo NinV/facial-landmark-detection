@@ -18,14 +18,14 @@ class GCNNet(nn.Module):
         in_dim_node = net_params['in_dim'] # node_dim (feat is an integer)
         hidden_dim = net_params['hidden_dim']
         out_dim = net_params['out_dim']
-        n_classes = net_params['n_classes']
+        n_output = net_params['n_output']
         in_feat_dropout = net_params['in_feat_dropout']
         dropout = net_params['dropout']
         n_layers = net_params['L']
         self.readout = net_params['readout']
         self.batch_norm = net_params['batch_norm']
         self.residual = net_params['residual']
-        self.n_classes = n_classes
+        self.n_output = n_output
         self.device = net_params['device']
         
         self.embedding_h = nn.Embedding(in_dim_node, hidden_dim) # node feat is an integer
@@ -33,7 +33,7 @@ class GCNNet(nn.Module):
         self.layers = nn.ModuleList([GCNLayer(hidden_dim, hidden_dim, F.relu, dropout,
                                               self.batch_norm, self.residual) for _ in range(n_layers-1)])
         self.layers.append(GCNLayer(hidden_dim, out_dim, F.relu, dropout, self.batch_norm, self.residual))
-        self.MLP_layer = MLPReadout(out_dim, n_classes)        
+        self.MLP_layer = MLPReadout(out_dim, n_output)        
 
 
     def forward(self, g, h, e):
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     net_params['in_dim'] = 4
     net_params['hidden_dim'] = 128
     net_params['out_dim'] = 128
-    net_params['n_classes'] = 4
+    net_params['n_output'] = 2
     net_params['in_feat_dropout'] = 0.
     net_params['dropout'] = 0.
     net_params['L'] = 2
