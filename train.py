@@ -1,6 +1,5 @@
 import argparse
 import pathlib
-from time import time
 
 import torch
 from torch.utils.data import random_split
@@ -9,7 +8,7 @@ import wandb
 from libs.models.networks.hourglass import StackedHourglass
 from libs.dataset.dataset import KeypointDataset
 from libs.models.losses import heatmap_loss
-from libs.dataset.heatmap import decode_heatmap
+from libs.utils.heatmap import decode_heatmap
 
 
 def parse_args():
@@ -84,8 +83,8 @@ def run_validation(net, loader, epoch, device):
             loss = heatmap_loss(outputs, labels)
             running_loss += loss.item()
 
-            for hm in outputs:
-                kps_from_hm = decode_heatmap(hm)
+            # for hm in outputs:
+            #     kps_from_hm = decode_heatmap(hm)
 
     running_loss /= len(loader.dataset)
     wandb.log({'val_loss': running_loss, 'epoch': epoch})

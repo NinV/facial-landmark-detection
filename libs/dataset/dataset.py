@@ -3,13 +3,12 @@ import pathlib
 
 from easydict import EasyDict as edict
 from tqdm import tqdm
-import cv2
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
-from .heatmap import heatmap_from_objects, heatmap_from_kps
-from ..utils.image import load_image, per_image_normalization, letterbox, simple_normalize
+from libs.utils.heatmap import heatmap_from_kps
+from libs.utils.image import load_image, letterbox, simple_normalize
 
 
 class BaseDataset(Dataset):
