@@ -27,6 +27,7 @@ class HGLandmarkModel(nn.Module):
 
         self.graph_model = get_graph_model()
         self.to(self.device)
+        print(next(self.parameters()).is_cuda)
 
     def forward(self, x):
         x = self.downsample(x)
@@ -47,8 +48,9 @@ class HGLandmarkModel(nn.Module):
         graphs = self._connecting_node(node_features[:, ])
 
         graph_model_outputs = []
-        for g in graphs:
-            graph_model_outputs.append(self.graph_model(g, node_features, None))
+        for g, h in zip(graphs, node_features):
+            g = g.to(self.device)
+            graph_model_outputs.append(self.graph_model(g, h, None))
 
         return hm, graphs, graph_model_outputs
 
