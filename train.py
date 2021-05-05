@@ -5,7 +5,8 @@ import torch
 from torch.utils.data import random_split
 import wandb
 
-from libs.models.networks.hourglass import StackedHourglass
+# from libs.models.networks.hourglass import StackedHourglass
+from libs.models.networks.models import HGLandmarkModel
 from libs.dataset.dataset import KeypointDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.heatmap import decode_heatmap
@@ -47,23 +48,30 @@ def train_one_epoch(net, optimizer, loader, epoch, device):
     net.train()
     running_loss = 0.0
     for i, data in enumerate(loader):
-        # get the inputs; data is a list of [inputs, labels]
-        inputs, labels, _ = data
-        num_samples = inputs.size()[0]
-        inputs = inputs.to(device, dtype=torch.float)
-        labels = labels.to(device, dtype=torch.float)
-
+        img, gt_kps, gt_hm, _ = data
+        num_samples = img.size()[0]
+        img = img.to(device, dtype=torch.float)
+        gt_hm = gt_hm.to(device, dtype=torch.float)
+        gt_kps = gt_kps.to(device, dtype=torch.float)
         # zero the parameter gradients
         optimizer.zero_grad()
-
         # forward + backward + optimize
-        outputs = net(inputs)
-        loss = heatmap_loss(outputs, labels) / num_samples
+        pred_hm, _, pred_kps = net(img)
+        hm_loss = heatmap_loss(pred_hm, gt_hm) / num_samples
+        regression_loss = torch.nn.L1Loss()(pred_kps, gt_kps)
+        loss = hm_loss + regression_loss
+
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
-        print("batch {}/{} loss: {}".format(i+1, len(loader), loss.item()))
-        wandb.log({'train_loss': loss.item(), 'epoch': epoch, 'batch': i+1})
+        print("batch {}/{}, heat map loss: {}, regression loss: {}".format(i+1, len(loader),
+                                                                           hm_loss.item(),
+                                                                           regression_loss.item()))
+        wandb.log({'train_total_loss': loss.item(),
+                   'train_hm_loss': hm_loss.item(),
+                   'train_regression_loss': regression_loss.item(),
+                   'epoch': epoch,
+                   'batch': i+1})
     running_loss = running_loss / (i+1)
     print("Training loss:", running_loss)
     return running_loss
@@ -76,18 +84,20 @@ def run_validation(net, loader, epoch, device):
     with torch.no_grad():
         running_loss = 0.0
         for i, data in enumerate(loader):
-            inputs, labels, transform_params = data
-            inputs = inputs.to(device, dtype=torch.float)
-            labels = labels.to(device, dtype=torch.float)
-            outputs = net(inputs)
-            loss = heatmap_loss(outputs, labels)
-            running_loss += loss.item()
-
-            # for hm in outputs:
-            #     kps_from_hm = decode_heatmap(hm)
-
+            img, gt_kps, gt_hm, _ = data
+            num_samples = img.size()[0]
+            img = img.to(device, dtype=torch.float)
+            gt_hm = gt_hm.to(device, dtype=torch.float)
+            gt_kps = gt_kps.to(device, dtype=torch.float)
+            pred_hm, _, pred_kps = net(img)
+            hm_loss = heatmap_loss(pred_hm, gt_hm) / num_samples
+            regression_loss = torch.nn.L1Loss()(pred_kps, gt_kps)
+            loss = hm_loss + regression_loss
     running_loss /= len(loader.dataset)
-    wandb.log({'val_loss': running_loss, 'epoch': epoch})
+    wandb.log({'val_total_loss': loss.item(),
+               'val_hm_loss': hm_loss.item(),
+               'val_regression_loss': regression_loss.item(),
+               'epoch': epoch})
     print("Testing loss:", running_loss, end="\n-----------------------------------------------------------\n\n")
     return running_loss
 
@@ -107,7 +117,10 @@ def main(args):
 
     # create network
     dims = [[256, 256, 384], [384, 384, 512]]
-    net = StackedHourglass(3, dims, 15).to(device)
+    # net = StackedHourglass(3, dims, 15).to(device)
+    graph_model_configs = {"nodes_connecting": "topk",
+                           "k": 2}
+    net = HGLandmarkModel(3, 15, dims, graph_model_configs, device)
 
     keypoint_label_names = list(range(15))
     dataset = KeypointDataset(args.annotation,

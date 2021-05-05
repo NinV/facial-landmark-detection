@@ -52,6 +52,7 @@ class HGLandmarkModel(nn.Module):
             g = g.to(self.device)
             graph_model_outputs.append(self.graph_model(g, h, None))
 
+        graph_model_outputs = torch.stack(graph_model_outputs)
         return hm, graphs, graph_model_outputs
 
     @staticmethod
