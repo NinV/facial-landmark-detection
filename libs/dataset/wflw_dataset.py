@@ -43,8 +43,6 @@ class WFLWDataset(BaseDataset):
         print("Loading dataset")
         self.annotations = {}
         for i, (_, row) in tqdm(enumerate(df.iterrows()), total=len(df.index)):
-            if i == 10:
-                break
             img = load_image(self.image_folder / row.image_name)
 
             # may remove some key points
