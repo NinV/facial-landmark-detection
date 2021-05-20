@@ -34,6 +34,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="random seed for train-test split")
     parser.add_argument("--format", default="WFLW", help="dataset format: 'WFLW', 'COCO'")
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
+    parser.add_argument("-n", "--normalized_index", nargs='+', type=int, default=[96, 97],
+                        help="landmarks indexes for calculate normalize distance in NME")
 
     # save config
     parser.add_argument("-s", "--saved_folder", default="saved_models", help="folder for saving model")
@@ -65,7 +67,6 @@ def train_one_epoch(net, optimizer, loader, epoch, device, args):
         num_samples = img.size()[0]
         img = img.to(device, dtype=torch.float)
         gt_hm = gt_hm.to(device, dtype=torch.float)
-        gt_kps = gt_kps.to(device, dtype=torch.float)
 
         # zero the parameter gradients
         optimizer.zero_grad()
@@ -84,7 +85,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, args):
 
 def run_evaluation(net, loader, epoch, device, prefix='val'):
     net.eval()
-    running_hm_loss = 0, 0
+    running_hm_loss = 0
     with torch.no_grad():
         for i, data in enumerate(loader):
             img, gt_kps, gt_hm, _ = data
@@ -96,9 +97,9 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             running_hm_loss += hm_loss.item()
 
     gt_kps = gt_kps.detach().cpu().tolist()
-    pred_kps = net.decode_heatmap(pred_hm)
+    pred_kps = net.decode_heatmap(pred_hm, confidence_threshold=0.0)
     pred_kps = pred_kps.detach().cpu().tolist()
-    nme, _, _ = normalized_mean_error(gt_kps, pred_kps, [0, 9])
+    nme, _, _ = normalized_mean_error(gt_kps, pred_kps, args.normalized_index)
 
     num_samples = len(loader.dataset)
     running_hm_loss /= num_samples
