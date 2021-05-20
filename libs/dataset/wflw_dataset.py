@@ -12,10 +12,12 @@ from libs.utils.heatmap import heatmap_from_kps
 
 
 class WFLWDataset(BaseDataset):
-    def __init__(self, *args, radius=4, num_landmarks=98, **kwargs):
-        self.num_landmarks = num_landmarks
-        super(WFLWDataset, self).__init__(*args, **kwargs)
+    def __init__(self, *args, radius=4, crop_face_storing="temp", **kwargs):
+        self.keypoint_label_names = kwargs["keypoint_label_names"]
+        self._num_classes = len(self.keypoint_label_names)
         self.radius = radius
+        self.crop_face_storing = crop_face_storing
+        super(WFLWDataset, self).__init__(*args, **kwargs)
 
     def _load_images(self):
         """
@@ -27,11 +29,11 @@ class WFLWDataset(BaseDataset):
         (1) image_name
         """
         if not self.in_memory:
-            self.temp_images_folder = pathlib.Path("temp")
-            self.temp_images_folder.mkdir(exist_ok=True)
+            self.temp_images_folder = pathlib.Path(self.crop_face_storing)
+            self.temp_images_folder.mkdir(parents=True, exist_ok=True)
 
         csv_headers = []
-        for i in range(self.num_landmarks):
+        for i in range(self._num_classes):
             csv_headers.extend(("x{}".format(i), "y{}".format(i)))
         # csv_headers = [("x{}".format(i), "y{}".format(i)) for i in range(98)]
         csv_headers.extend(("x_min_rect", "y_min_rect", "x_max_rect", "y_max_rect"))
@@ -49,9 +51,9 @@ class WFLWDataset(BaseDataset):
             crop = img[row.y_min_rect: row.y_max_rect,
                        row.x_min_rect: row.x_max_rect]
 
-            lm_data = np.array(row.to_list()[:self.num_landmarks*2]).reshape(-1, 2)
+            lm_data = np.array(row.to_list()[:self._num_classes*2]).reshape(-1, 2)
             lm_data -= (row.x_min_rect, row.y_min_rect)
-            kp_classes = np.arange(self.num_landmarks).reshape(self.num_landmarks, 1)
+            kp_classes = np.arange(self._num_classes).reshape(self._num_classes, 1)
             lm_data = np.concatenate([lm_data, kp_classes], axis=-1)
             self.annotations[i] = lm_data
             if self.in_memory:
@@ -64,6 +66,9 @@ class WFLWDataset(BaseDataset):
                 self._image_ids.append(i)
 
     def __getitem__(self, idx):
+        if idx >= len(self):
+            raise IndexError
+
         if not self.in_memory:
             img = load_image(self.images[idx])
         else:
@@ -80,7 +85,7 @@ class WFLWDataset(BaseDataset):
             img, kps = self.augmentation.transform(img, kps)
 
         h, w, c = img.shape
-        hm = heatmap_from_kps((h // self.downsampling_factor, w // self.downsampling_factor, self.num_landmarks),
+        hm = heatmap_from_kps((h // self.downsampling_factor, w // self.downsampling_factor, self._num_classes),
                               self._downsample_heatmap_kps(kps), radius=self.radius)
 
         img = torch.from_numpy(img).permute(2, 0, 1)
