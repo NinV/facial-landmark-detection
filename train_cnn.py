@@ -22,6 +22,7 @@ def parse_args():
     # model config
     parser.add_argument("--num_classes", default=98, type=int, help="Number of landmark classes")
     parser.add_argument("--image_size", default=512, type=int)
+    parser.add_argument("--disable_downsample", action="store_true")
 
     # dataset
     parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
@@ -120,7 +121,7 @@ def main(args):
     #                        "k": 2}
     graph_model_configs = None
     net = HGLandmarkModel(3, args.num_classes, dims, graph_model_configs, device,
-                          include_graph_model=False, downsample=False)
+                          include_graph_model=False, downsample= not args.disable_downsample)
 
     keypoint_label_names = list(range(args.num_classes))
     if args.format == "COCO":
@@ -169,7 +170,10 @@ def main(args):
     training_config = {"batch_size": args.batch_size,
                        "epochs": args.epochs,
                        "radius": args.radius,
-                       "learning_rate": args.lr}
+                       "learning_rate": args.lr,
+                       "image_size": args.image_size,
+                       "num_classes": args.num_classes,
+                       "normalized_index": args.normalized_index}
     if args.test_images:
         training_config["split"] = args.split
         training_config["seed"] = args.seed
