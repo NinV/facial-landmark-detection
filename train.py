@@ -1,15 +1,16 @@
 import argparse
 import pathlib
-from time import time
 
 import torch
 from torch.utils.data import random_split
 import wandb
 
-from libs.models.networks.hourglass import StackedHourglass
+# from libs.models.networks.hourglass import StackedHourglass
+from libs.models.networks.models import HGLandmarkModel
 from libs.dataset.dataset import KeypointDataset
 from libs.models.losses import heatmap_loss
-from libs.dataset.heatmap import decode_heatmap
+from libs.utils.heatmap import decode_heatmap
+from libs.utils.metrics import normalized_mean_error
 
 
 def parse_args():
@@ -46,51 +47,63 @@ def create_folder(path):
 
 def train_one_epoch(net, optimizer, loader, epoch, device):
     net.train()
-    running_loss = 0.0
     for i, data in enumerate(loader):
-        # get the inputs; data is a list of [inputs, labels]
-        inputs, labels, _ = data
-        num_samples = inputs.size()[0]
-        inputs = inputs.to(device, dtype=torch.float)
-        labels = labels.to(device, dtype=torch.float)
+        img, gt_kps, gt_hm, _ = data
+        num_samples = img.size()[0]
+        img = img.to(device, dtype=torch.float)
+        gt_hm = gt_hm.to(device, dtype=torch.float)
+        gt_kps = gt_kps.to(device, dtype=torch.float)
 
         # zero the parameter gradients
         optimizer.zero_grad()
 
         # forward + backward + optimize
-        outputs = net(inputs)
-        loss = heatmap_loss(outputs, labels) / num_samples
+        pred_hm, _, pred_kps = net(img)
+        hm_loss = heatmap_loss(pred_hm, gt_hm) / num_samples
+        regression_loss = torch.nn.L1Loss(reduction='mean')(pred_kps, gt_kps)
+        loss = hm_loss + regression_loss
+
         loss.backward()
         optimizer.step()
-        running_loss += loss.item()
-        print("batch {}/{} loss: {}".format(i+1, len(loader), loss.item()))
-        wandb.log({'train_loss': loss.item(), 'epoch': epoch, 'batch': i+1})
-    running_loss = running_loss / (i+1)
-    print("Training loss:", running_loss)
-    return running_loss
-    # print("Average loss (across all mini batches):", running_loss/(i+1))
-    # torch.save(net.state_dict(), "saved_models/HG_ep_{}.pt".format(epoch+1))
+        print("batch {}/{}, heat map loss: {}, regression loss: {}".format(i+1, len(loader),
+                                                                           hm_loss.item(),
+                                                                           regression_loss.item()))
+        wandb.log({'train_total_loss (step)': loss.item(),
+                   'train_hm_loss (step)': hm_loss.item(),
+                   'train_regression_loss (step)': regression_loss.item(),
+                   'epoch': epoch,
+                   'batch': i+1})
 
 
-def run_validation(net, loader, epoch, device):
+def run_evaluation(net, loader, epoch, device, prefix='val'):
     net.eval()
+    running_hm_loss, running_regression_loss = 0, 0
     with torch.no_grad():
-        running_loss = 0.0
         for i, data in enumerate(loader):
-            inputs, labels, transform_params = data
-            inputs = inputs.to(device, dtype=torch.float)
-            labels = labels.to(device, dtype=torch.float)
-            outputs = net(inputs)
-            loss = heatmap_loss(outputs, labels)
-            running_loss += loss.item()
+            img, gt_kps, gt_hm, _ = data
+            img = img.to(device, dtype=torch.float)
+            gt_hm = gt_hm.to(device, dtype=torch.float)
+            gt_kps = gt_kps.to(device, dtype=torch.float)
+            pred_hm, _, pred_kps = net(img)
+            hm_loss = heatmap_loss(pred_hm, gt_hm)
+            regression_loss = torch.nn.L1Loss(reduction="sum")(pred_kps, gt_kps)
+            running_hm_loss += hm_loss.item()
+            running_regression_loss += regression_loss.item()
 
-            for hm in outputs:
-                kps_from_hm = decode_heatmap(hm)
+    gt_kps = gt_kps.detach().cpu().tolist()
+    pred_kps = pred_kps.detach().cpu().tolist()
+    nme, _, _ = normalized_mean_error(gt_kps, pred_kps, [0, 9])
 
-    running_loss /= len(loader.dataset)
-    wandb.log({'val_loss': running_loss, 'epoch': epoch})
-    print("Testing loss:", running_loss, end="\n-----------------------------------------------------------\n\n")
-    return running_loss
+    num_samples = len(loader.dataset)
+    running_hm_loss /= num_samples
+    running_regression_loss /= (num_samples * net.num_classes)
+    wandb.log({'{}_total_loss'.format(prefix): running_hm_loss + running_regression_loss,
+               '{}_hm_loss'.format(prefix): running_hm_loss,
+               '{}_regression_loss'.format(prefix): running_regression_loss,
+               '{}_nme'.format(prefix): nme,
+               'epoch': epoch})
+
+    return running_hm_loss, running_regression_loss, nme
 
 
 def wandb_config(args):
@@ -108,7 +121,9 @@ def main(args):
 
     # create network
     dims = [[256, 256, 384], [384, 384, 512]]
-    net = StackedHourglass(3, dims, 15).to(device)
+    graph_model_configs = {"nodes_connecting": "topk",
+                           "k": 2}
+    net = HGLandmarkModel(3, 15, dims, graph_model_configs, device)
 
     keypoint_label_names = list(range(15))
     dataset = KeypointDataset(args.annotation,
@@ -124,25 +139,35 @@ def main(args):
                                           generator=torch.Generator().manual_seed(args.seed))
 
     train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
+    eval_train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size * 2, drop_last=False)
+    eval_test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
     optimizer = torch.optim.Adam(net.parameters(), lr=0.0001)
 
-    curr_train_loss = 2.0
-    curr_valid_loss = 10.0
+    curr_train_nme = float("inf")
+    curr_valid_nme = float("inf")
 
     wandb.init(project="facial-landmark")
 
     for epoch in range(1, args.epochs+1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
-        train_loss = train_one_epoch(net, optimizer, train_loader, epoch, device)
-        val_loss = run_validation(net, test_loader, epoch, device)
-        if train_loss < curr_train_loss:
-            torch.save(net.state_dict(), "{}/HG_best_train.pt".format(args.saved_folder))
-            curr_train_loss = train_loss
+        train_one_epoch(net, optimizer, train_loader, epoch, device)
 
-        if val_loss < curr_valid_loss:
+        print("Evaluating on training set")
+        train_hm_loss, train_regr_loss, train_nme = run_evaluation(net, eval_train_loader, epoch, device)
+        print("hm loss: {}, regr loss: {}, NME: {}".format(train_hm_loss, train_regr_loss, train_nme),
+              end="\n-------------------------------------------\n\n")
+        print("Evaluating on testing set")
+        val_hm_loss, val_regr_loss, val_nme = run_evaluation(net, eval_test_loader, epoch, device)
+        print("hm loss: {}, regr loss: {}, NME: {}".format(val_hm_loss, val_regr_loss, val_nme),
+              end="\n-------------------------------------------\n\n")
+
+        if train_nme < curr_train_nme:
+            torch.save(net.state_dict(), "{}/HG_best_train.pt".format(args.saved_folder))
+            curr_train_nme = train_nme
+
+        if val_nme < curr_valid_nme:
             torch.save(net.state_dict(), "{}/HG_best_val.pt".format(args.saved_folder))
-            curr_valid_loss = val_loss
+            curr_valid_nme = val_nme
 
     torch.save(net, "{}/HG_final.pt".format(args.saved_folder))
     print('Finished Training')

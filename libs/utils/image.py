@@ -46,6 +46,32 @@ def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scale
     return img, ratio, (dw, dh)
 
 
+class Resize:
+    def __init__(self, image_size, training=True):
+        self.w, self.h = image_size
+        self.training = training
+
+    def __call__(self, img, kps):
+        resized_img, ratio, (dw, dh) = letterbox(img, new_shape=(self.h, self.w), auto=not self.training)
+        kps_resized = np.asarray(kps, dtype=np.float)
+        kps_resized[:, :2] *= ratio  # ratio = [ratio_w, ratio_h]
+        kps_resized[:, 0] += dw
+        kps_resized[:, 1] += dh
+
+        return resized_img, kps_resized, [*ratio, dw, dh]
+
+    @staticmethod
+    def inverse_resize(kps, ratio, dw, dh):
+        if not isinstance(kps, np.ndarray):
+            kps_ = np.asarray(kps, dtype=np.float)
+        else:
+            kps_ = kps.copy()
+        kps_[:, 0] -= dw
+        kps_[:, 1] -= dh
+        kps_[:, :2] /= ratio
+        return kps_
+
+
 def per_image_normalization(image):
     image = image.astype(np.float)
     try:

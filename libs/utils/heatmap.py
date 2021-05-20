@@ -138,7 +138,7 @@ def draw_msra_gaussian(heatmap, center, sigma):
     return heatmap
 
 
-def decode_heatmap(hm, kernel=3, num_classes=15, conf=0.5):
+def decode_heatmap(hm, num_classes, conf, kernel=3):
     """
     hm : (1, c, h, w) pytorch tensor
     """

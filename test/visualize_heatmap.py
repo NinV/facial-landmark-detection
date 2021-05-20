@@ -8,7 +8,7 @@ import os
 import cv2
 import numpy as np
 import torch
-from libs.dataset.heatmap import gaussian_radius, gaussian2D, heatmap_from_kps
+from libs.utils.heatmap import heatmap_from_kps
 
 
 def to_int(jsonfile, out):
