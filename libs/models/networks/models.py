@@ -84,7 +84,7 @@ class HGLandmarkModel(nn.Module):
                     indices_x, indices_y = indices_x[0], indices_y[0]  # ensure only there only one landmark per class
                     if hm_reduce[i, c, indices_y, indices_x] > confidence_threshold:
                         kps[i].append([indices_x, indices_y, c])
-        return torch.tensor(kps)
+        return torch.tensor(kps)    # TODO: bug arise if some keypoints are removed due to low confidence
 
     def _connecting_node(self, node_pos):
         configs = self.graph_model_configs
