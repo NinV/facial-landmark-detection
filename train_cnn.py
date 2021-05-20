@@ -188,11 +188,11 @@ def main(args):
         train_one_epoch(net, optimizer, train_loader, epoch, device, args)
 
         print("Evaluating on training set")
-        train_hm_loss, train_nme = run_evaluation(net, eval_train_loader, epoch, device)
+        train_hm_loss, train_nme = run_evaluation(net, eval_train_loader, epoch, device, prefix="train")
         print("hm loss: {}, NME: {}".format(train_hm_loss, train_nme),
               end="\n-------------------------------------------\n\n")
         print("Evaluating on testing set")
-        val_hm_loss, val_nme = run_evaluation(net, eval_test_loader, epoch, device)
+        val_hm_loss, val_nme = run_evaluation(net, eval_test_loader, epoch, device, prefix="val")
         print("hm loss: {}, NME: {}".format(val_hm_loss, val_nme),
               end="\n-------------------------------------------\n\n")
 
