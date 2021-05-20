@@ -74,7 +74,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, args):
 
         # forward + backward + optimize
         pred_hm = net(img)
-        loss = heatmap_loss(pred_hm, gt_hm) / num_samples
+        loss = heatmap_loss(pred_hm, gt_hm)
         loss.backward()
         optimizer.step()
         print("batch {}/{}, heat map loss: {}".format(i + 1, len(loader),
@@ -95,7 +95,7 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm = net(img)
             hm_loss = heatmap_loss(pred_hm, gt_hm)
-            running_hm_loss += hm_loss.item()
+            running_hm_loss += hm_loss.item() * len(img)
 
     gt_kps = gt_kps.detach().cpu().tolist()
     pred_kps = net.decode_heatmap(pred_hm, confidence_threshold=0.0)
