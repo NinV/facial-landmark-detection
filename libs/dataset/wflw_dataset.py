@@ -74,7 +74,7 @@ class WFLWDataset(BaseDataset):
         else:
             img = self.images[idx]
 
-        kps = self.annotations[idx]
+        kps = self.annotations[idx].copy()  # always using a deep copy to prevent modification on original data
         if self.resize_func is not None:
             img, kps, transform_params = self.resize_func(img, kps)  # resize image
 
