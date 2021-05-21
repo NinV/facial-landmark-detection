@@ -13,8 +13,7 @@ from libs.models.networks.models import HGLandmarkModel
 from libs.dataset.coco_dataset import KeypointDataset
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
-from libs.utils.heatmap import decode_heatmap
-from libs.utils.metrics import normalized_mean_error, compute_nme
+from libs.utils.metrics import compute_nme
 
 
 def parse_args():
