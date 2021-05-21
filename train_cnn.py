@@ -98,9 +98,8 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             hm_loss = heatmap_loss(pred_hm, gt_hm)
             running_hm_loss += (hm_loss.item() * len(img))
             pred_kps = net.decode_heatmap(pred_hm, confidence_threshold=0.0)
-            nme = compute_nme(pred_kps[:, :, :2], {'pts': gt_kps[:, :, :2]})
-            running_nme += (nme * len(img))
-
+            nme = np.sum(compute_nme(pred_kps[:, :, :2], {'pts': gt_kps[:, :, :2]}), keepdims=False)
+            running_nme += nme
     num_samples = len(loader.dataset)
     running_hm_loss /= num_samples
     running_nme /= num_samples
@@ -108,7 +107,7 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
                '{}_nme'.format(prefix): running_nme,
                'epoch': epoch})
 
-    return running_hm_loss, nme
+    return running_hm_loss, running_nme
 
 
 def main(args):
