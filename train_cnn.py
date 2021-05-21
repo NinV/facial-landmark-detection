@@ -65,7 +65,6 @@ def train_one_epoch(net, optimizer, loader, epoch, device, args):
     net.train()
     for i, data in enumerate(loader):
         img, gt_kps, gt_hm, _ = data
-        num_samples = img.size()[0]
         img = img.to(device, dtype=torch.float)
         gt_hm = gt_hm.to(device, dtype=torch.float)
 
@@ -79,7 +78,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, args):
         optimizer.step()
         print("batch {}/{}, heat map loss: {}".format(i + 1, len(loader),
                                                       loss.item()))
-        wandb.log({'train_total_loss (step)': loss.item(),
+        wandb.log({'train_hm_loss (step)': loss.item(),
                    'epoch': epoch,
                    'batch': i + 1})
 
@@ -87,6 +86,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, args):
 def run_evaluation(net, loader, epoch, device, prefix='val'):
     net.eval()
     running_hm_loss = 0
+    running_nme = 0
     with torch.no_grad():
         for i, data in enumerate(loader):
             img, gt_kps, gt_hm, _ = data
@@ -95,17 +95,19 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm = net(img)
             hm_loss = heatmap_loss(pred_hm, gt_hm)
-            running_hm_loss += hm_loss.item() * len(img)
+            running_hm_loss += (hm_loss.item() * len(img))
 
-    gt_kps = gt_kps.detach().cpu().tolist()
-    pred_kps = net.decode_heatmap(pred_hm, confidence_threshold=0.0)
-    pred_kps = pred_kps.detach().cpu().tolist()
-    nme, _, _ = normalized_mean_error(gt_kps, pred_kps, args.normalized_index)
+            gt_kps = gt_kps.detach().cpu().tolist()
+            pred_kps = net.decode_heatmap(pred_hm, confidence_threshold=0.0)
+            pred_kps = pred_kps.detach().cpu().tolist()
+            nme, _, _ = normalized_mean_error(gt_kps, pred_kps, args.normalized_index)
+            running_nme += (nme * len(img))
 
     num_samples = len(loader.dataset)
     running_hm_loss /= num_samples
+    running_nme /= num_samples
     wandb.log({'{}_hm_loss'.format(prefix): running_hm_loss,
-               '{}_nme'.format(prefix): nme,
+               '{}_nme'.format(prefix): running_nme,
                'epoch': epoch})
 
     return running_hm_loss, nme
@@ -181,30 +183,22 @@ def main(args):
     wandb.init(project="gnn-landmarks",
                config=training_config)
 
-    curr_train_nme = float("inf")
-    curr_valid_nme = float("inf")
     for epoch in range(1, args.epochs + 1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
         train_one_epoch(net, optimizer, train_loader, epoch, device, args)
 
-        print("Evaluating on training set")
-        train_hm_loss, train_nme = run_evaluation(net, eval_train_loader, epoch, device, prefix="train")
-        print("hm loss: {}, NME: {}".format(train_hm_loss, train_nme),
-              end="\n-------------------------------------------\n\n")
+        # print("Evaluating on training set")
+        # train_hm_loss, train_nme = run_evaluation(net, eval_train_loader, epoch, device, prefix="train")
+        # print("hm loss: {}, NME: {}".format(train_hm_loss, train_nme),
+        #       end="\n-------------------------------------------\n\n")
+
         print("Evaluating on testing set")
         val_hm_loss, val_nme = run_evaluation(net, eval_test_loader, epoch, device, prefix="val")
         print("hm loss: {}, NME: {}".format(val_hm_loss, val_nme),
               end="\n-------------------------------------------\n\n")
 
-        if train_nme < curr_train_nme:
-            torch.save(net.state_dict(), "{}/HG_best_train.pt".format(args.saved_folder))
-            curr_train_nme = train_nme
+        torch.save(net.state_dict(), "{}/HG_epoch_{}.pt".format(args.saved_folder, epoch))
 
-        if val_nme < curr_valid_nme:
-            torch.save(net.state_dict(), "{}/HG_best_val.pt".format(args.saved_folder))
-            curr_valid_nme = val_nme
-
-    torch.save(net, "{}/HG_final.pt".format(args.saved_folder))
     print('Finished Training')
     return net
 
