@@ -4,6 +4,7 @@ Train CNN backbone only
 import argparse
 import pathlib
 
+import numpy as np
 import torch
 from torch.utils.data import random_split
 import wandb
@@ -13,7 +14,7 @@ from libs.dataset.coco_dataset import KeypointDataset
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.heatmap import decode_heatmap
-from libs.utils.metrics import normalized_mean_error
+from libs.utils.metrics import normalized_mean_error, compute_nme
 
 
 def parse_args():
@@ -23,6 +24,7 @@ def parse_args():
     parser.add_argument("--num_classes", default=98, type=int, help="Number of landmark classes")
     parser.add_argument("--image_size", default=512, type=int)
     parser.add_argument("--downsample", action="store_false", help="Disable downsampling")
+    parser.add_argument("--weights", help="load weights")
 
     # dataset
     parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
@@ -92,15 +94,12 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             img, gt_kps, gt_hm, _ = data
             img = img.to(device, dtype=torch.float)
             gt_hm = gt_hm.to(device, dtype=torch.float)
-            gt_kps = gt_kps.to(device, dtype=torch.float)
+
             pred_hm = net(img)
             hm_loss = heatmap_loss(pred_hm, gt_hm)
             running_hm_loss += (hm_loss.item() * len(img))
-
-            gt_kps = gt_kps.detach().cpu().tolist()
             pred_kps = net.decode_heatmap(pred_hm, confidence_threshold=0.0)
-            pred_kps = pred_kps.detach().cpu().tolist()
-            nme, _, _ = normalized_mean_error(gt_kps, pred_kps, args.normalized_index)
+            nme = compute_nme(pred_kps[:, :, :2], {'pts': gt_kps[:, :, :2]})
             running_nme += (nme * len(img))
 
     num_samples = len(loader.dataset)
@@ -124,7 +123,6 @@ def main(args):
     graph_model_configs = None
     net = HGLandmarkModel(3, args.num_classes, dims, graph_model_configs, device,
                           include_graph_model=False, downsample= args.downsample)
-
     keypoint_label_names = list(range(args.num_classes))
     if args.format == "COCO":
         dataset = KeypointDataset(args.annotation,
