@@ -1,85 +1,109 @@
-import os
-import json
-from tqdm import tqdm
-import pathlib
-import cv2
+import argparse
 import numpy as np
+import cv2
 import torch
-from libs.dataset.dataset import simple_normalize, letterbox
-from libs.models.networks.hourglass import StackedHourglass
-from libs.utils.image import load_image
 
 
-def decode_heatmap(hm, kernel=3, num_classes=15, conf=0.5):
-    """
-    hm : (h, w, c) numpy array
-    """
-    pad = (kernel - 1) // 2
-    hmax = torch.nn.functional.max_pool2d(hm, (kernel, kernel), stride=1, padding=pad)
-    keep = (hmax == hm).float()
-    hm_reduce = (hm * keep)[0]
-
-    # find indices
-    kps = {}
-    for c in range(num_classes):
-        indices_y, indices_x = torch.logical_and(hm_reduce[c] > conf,
-                                                 hm_reduce[c] == torch.max(hm_reduce[c])).nonzero(as_tuple=True)
-
-        indices_x = indices_x.tolist()
-        indices_y = indices_y.tolist()
-        if indices_x:
-            kps[c] = (indices_x[0], indices_y[0])
-        # print(indices_x, indices_y)
-        # for x, y in zip(indices_x, indices_y):
-        #     try:
-        #         kps[c].append((x, y))
-        #     except KeyError:
-        #         kps[c] = [(x, y)]
-
-    # for plotting
-    hm_reduce = hm_reduce.permute(1, 2, 0)
-    return hm_reduce.detach().cpu().numpy(), kps
+from libs.models.networks.models import HGLandmarkModel
+from libs.dataset.wflw_dataset import WFLWDataset
+from libs.models.losses import heatmap_loss
 
 
-def preproc(img):
-    resized, ratio, (dw, dh) = letterbox(img, new_shape=(512, 512), auto=True)
-    img = resized/255
-    img = np.expand_dims(img, axis=0)
-    img = torch.from_numpy(img).permute(0, 3, 1, 2).float()
-    return img, resized
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    # model config
+    parser.add_argument("--num_classes", default=98, type=int, help="Number of landmark classes")
+    parser.add_argument("--image_size", default=512, type=int)
+    parser.add_argument("--downsample", action="store_false", help="Disable downsampling")
+
+    # dataset
+    parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
+    parser.add_argument("--annotation", required=True, help="Annotation file for training")
+    parser.add_argument("--format", default="WFLW", help="dataset format: 'WFLW', 'COCO'")
+    parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
+    # parser.add_argument("-n", "--normalized_index", nargs='+', type=int, default=[96, 97],
+    #                     help="landmarks indexes for calculate normalize distance in NME")
+    parser.add_argument("--radius", type=int, default=8)
+
+    # save config
+    parser.add_argument("-s", "--saved_weights", default="saved_models/cnn-baseline-1/HG_epoch_47.pt",
+                        help="path to saved weights")
+    parser.add_argument("--batch_size", type=int, default=4)
+    return parser.parse_args()
 
 
-def main():
-    saved_model_path = "saved_models/HG_best_train.pt"
-    # img_path = "/home/ninv/MyProjects/deneer/side-face-data-3-3/Folder02/success/1 (3) (Large).jpg"
-    # img_path = "/media/ninv/Data/dataset/deneer/side-face-data-9-4/Folder34/success/koder (42).jpg"
-    img_folder = pathlib.Path("/media/ninv/Data/dataset/deneer/side-face-data-9-4/Folder34/success")
+def plot_kps(img, gt, pred):
+    for (x, y, classId) in gt:
+        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 255, 0])
 
-    dims = [[256, 256, 384], [384, 384, 512]]
-    net = StackedHourglass(3, dims, 15)
-    net.load_state_dict(torch.load(saved_model_path))
+    for (x, y, classId) in pred:
+        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 0, 255])
+
+    return img
+
+
+def visualize_hm(hm):
+    hm = hm.permute(1, 2, 0).cpu().numpy()
+    hm = np.max(hm, axis=-1)
+    return (hm * 255).astype(np.uint8)
+
+
+def run_evaluation(net, dataset, device):
     net.eval()
+    running_hm_loss = 0
+    with torch.no_grad():
+        for i, data in enumerate(dataset):
+            img, gt_kps, gt_hm, _ = data
+            img_tensor = torch.unsqueeze(img, 0).to(device, dtype=torch.float)
+            gt_kps = np.expand_dims(gt_kps, axis=0) * net.downsampling_factor
 
-    img_files = list(img_folder.glob("*.jpg"))
-    for i, img_path in enumerate(tqdm(img_files)):
-        with torch.no_grad():
-            img = load_image(img_path)
-            img_preproc, resized = preproc(img)
-            pred = net(img_preproc)
-            pred, kps_on_heatmap = decode_heatmap(pred, conf=0.1)
-        for kp_name, (x, y) in kps_on_heatmap.items():
-            cv2.circle(resized, (x * net.downsampling_factor, y*net.downsampling_factor), radius=2,
-                       thickness=-1, color=[0, 255, 0])
+            pred_hm_tensor = net(img_tensor)
+            pred_kps = net.decode_heatmap(pred_hm_tensor, confidence_threshold=0.0) * net.downsampling_factor
+            pred_kps = pred_kps.detach().cpu().numpy()
 
-        # pred = np.max(pred, axis=2, keepdims=False) * 255
-        # cv2.imshow("image", cv2.cvtColor(resized, cv2.COLOR_RGB2BGR))
-        # cv2.imshow("pred", pred.astype(np.uint8))
-        # k = cv2.waitKey(0)
-        # if k == ord("q"):
-        #     break
-        cv2.imwrite("out/img_{}.jpg".format(i+1), cv2.cvtColor(resized, cv2.COLOR_RGB2BGR))
-    cv2.destroyAllWindows()
+            # show image
+            img = img * 255
+            img = img.detach().cpu()
+            img = img.permute(1, 2, 0).numpy().astype(np.uint8)
+            img = plot_kps(img, gt_kps[0], pred_kps[0])
+
+            gt_hm_np = visualize_hm(gt_hm)
+            pred_hm_np = visualize_hm(pred_hm_tensor[0])
+
+            cv2.imshow("img", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            cv2.imshow("gt_hm", gt_hm_np)
+            cv2.imshow("pred_hm", pred_hm_np)
+            k = cv2.waitKey(0)
+
+            if k == ord("q"):
+                break
+
+
+def main(args):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # create network
+    dims = [[256, 256, 384], [384, 384, 512]]
+
+    graph_model_configs = None
+    net = HGLandmarkModel(3, args.num_classes, dims, graph_model_configs, device,
+                          include_graph_model=False, downsample=args.downsample)
+    net.load_state_dict(torch.load(args.saved_weights))
+    net.eval()
+    keypoint_label_names = list(range(args.num_classes))
+    dataset = WFLWDataset(args.annotation,
+                          args.images,
+                          image_size=(args.image_size, args.image_size),
+                          keypoint_label_names=keypoint_label_names,
+                          downsampling_factor=net.downsampling_factor,
+                          in_memory=args.in_memory,
+                          crop_face_storing="temp/train",
+                          radius=args.radius,
+                          )
+    run_evaluation(net, dataset, device)
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_args()
+    main(args)
