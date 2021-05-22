@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+
 project_path = str(Path(__file__).absolute().parents[1])
 sys.path.insert(0, project_path)
 
@@ -11,8 +12,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from libs.models.networks.hourglass import StackedHourglass
-from libs.dataset.dataset import KeypointDataset
-
+from libs.dataset.coco_dataset import KeypointDataset
+from libs.dataset.wflw_dataset import WFLWDataset
+from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion
 
 def decode_hm(hm):
     hm = hm.permute(1, 2, 0)
@@ -34,6 +36,8 @@ def parse_args():
     parser.add_argument("--annotation", required=True, help="Annotation file (.json)")
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
     parser.add_argument("--radius", type=int, default=4)
+    parser.add_argument("--num_classes", default=98, type=int, help="Number of landmark classes")
+    parser.add_argument("--image_size", default=512, type=int)
 
     return parser.parse_args()
 
@@ -51,39 +55,48 @@ def blend_heat_map(img, hm, alpha=0.5):
     return blend
 
 
+def get_augmentation(args):
+    translation = RandomTranslation((-0.1, 0.1), (-0.1, 0.1))
+    rotation_and_scaling = RandomScalingAndRotation((-10, 10), (0.8, 1.2))
+    color_distortion = ColorDistortion()
+    # blurring = GaussianBlur(0.5)
+    transform = SequentialTransform([translation, rotation_and_scaling], [0.5, 0.5],
+                                    [color_distortion], [0.5],
+                                    (args.image_size, args.image_size))
+    return transform
+
+
 def main(args):
-    keypoint_label_names = list(range(15))
-    dataset = KeypointDataset(args.annotation,
-                              args.images,
-                              keypoint_label_names=keypoint_label_names,
-                              downsampling_factor=4,
-                              in_memory=False,
-                              radius=args.radius)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, drop_last=False)
-    for i, (inputs, labels) in enumerate(loader):
-        hm_gt = decode_hm(labels[0])
-        img_rgb = image_tensor_to_numpy(inputs[0])
+    transform = get_augmentation(args)
+    keypoint_label_names = list(range(args.num_classes))
+    dataset = WFLWDataset(args.annotation,
+                          args.images,
+                          image_size=(args.image_size, args.image_size),
+                          downsampling_factor=1,
+                          in_memory=False,
+                          radius=args.radius,
+                          keypoint_label_names=keypoint_label_names,
+                          normalize_func=None,
+                          augmentation=transform,
+                          force_square_shape=False)
+    print("finished loading")
+    print("Num images:", len(dataset), dataset.images, dataset._image_ids)
+    # for j in range(5):
+    for i, (img, kps, hm, transform_params) in enumerate(dataset):
+        img = img.permute(1, 2, 0).numpy()
+        hm = hm.permute(1, 2, 0).numpy()
+        hm = np.max(hm, axis=-1)
+        img = img.astype(np.uint8)
+        for (x, y, classId) in kps:
+            cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 255, 0])
 
-        h, w = img_rgb.shape[:2]
-
-        hm_gt_resized = cv2.resize(hm_gt, (w, h), interpolation=cv2.INTER_AREA)
-        hm_gt_resized_color = colorize_heatmap(hm_gt_resized)
-        blend = blend_heat_map(img_rgb, hm_gt_resized_color)
-
-        img = cv2.cvtColor(img_rgb.astype(np.uint8), cv2.COLOR_RGB2BGR)
-        blend = cv2.cvtColor(blend.astype(np.uint8), cv2.COLOR_RGB2BGR)
-        cv2.imshow("gt", hm_gt.astype(np.uint8))
-        cv2.imshow("heatmap gray", (hm_gt_resized * 255).astype(np.uint8))
-        cv2.imshow("heatmap color", hm_gt_resized_color.astype(np.uint8))
-        cv2.imshow("image", img.astype(np.uint8))
-        cv2.imshow("blend", blend.astype(np.uint8))
+        cv2.imshow("img", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        cv2.imshow("hm", (hm * 255).astype(np.uint8))
         k = cv2.waitKey(0)
         if k == ord("q"):
             break
-    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
     args = parse_args()
     main(args)
-
