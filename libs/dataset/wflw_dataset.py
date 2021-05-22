@@ -12,11 +12,12 @@ from libs.utils.heatmap import heatmap_from_kps
 
 
 class WFLWDataset(BaseDataset):
-    def __init__(self, *args, radius=4, crop_face_storing="temp", **kwargs):
+    def __init__(self, *args, radius=4, crop_face_storing="temp", force_square_shape=False, **kwargs):
         self.keypoint_label_names = kwargs["keypoint_label_names"]
         self._num_classes = len(self.keypoint_label_names)
         self.radius = radius
         self.crop_face_storing = crop_face_storing
+        self.force_square_shape = force_square_shape
         super(WFLWDataset, self).__init__(*args, **kwargs)
 
     def _load_images(self):
@@ -47,12 +48,34 @@ class WFLWDataset(BaseDataset):
         for i, (_, row) in tqdm(enumerate(df.iterrows()), total=len(df.index)):
             img = load_image(self.image_folder / row.image_name)
 
-            # may remove some key points
-            crop = img[row.y_min_rect: row.y_max_rect,
-                       row.x_min_rect: row.x_max_rect]
+            if self.force_square_shape:
+                h, w = row.y_max_rect - row.y_min_rect, row.x_max_rect - row.x_min_rect
+                if h < w:
+                    size = w
+                    pad = (w - h) // 2
+                    x_min_rect, x_max_rect = row.x_min_rect, row.x_max_rect
+                    y_min_rect = max(row.y_min_rect - pad, 0)
+                    y_max_rect = y_min_rect + size
+                else:
+                    size = h
+                    pad = (h - w) // 2
+                    y_min_rect, y_max_rect = row.y_min_rect, row.y_max_rect
+                    x_min_rect = max(row.x_min_rect - pad, 0)
+                    x_max_rect = x_min_rect + size
 
-            lm_data = np.array(row.to_list()[:self._num_classes*2]).reshape(-1, 2)
-            lm_data -= (row.x_min_rect, row.y_min_rect)
+                crop = img[y_min_rect: y_max_rect,
+                           x_min_rect: x_max_rect]
+
+                lm_data = np.array(row.to_list()[:self._num_classes*2]).reshape(-1, 2)
+                lm_data -= (x_min_rect, y_min_rect)
+            else:
+                # may remove some key points
+                crop = img[row.y_min_rect: row.y_max_rect,
+                           row.x_min_rect: row.x_max_rect]
+                lm_data = np.array(row.to_list()[:self._num_classes * 2]).reshape(-1, 2)
+                lm_data -= (row.x_min_rect, row.y_min_rect)
+
+
             kp_classes = np.arange(self._num_classes).reshape(self._num_classes, 1)
             lm_data = np.concatenate([lm_data, kp_classes], axis=-1)
             self.annotations[i] = lm_data
@@ -76,13 +99,17 @@ class WFLWDataset(BaseDataset):
 
         kps = self.annotations[idx].copy()  # always using a deep copy to prevent modification on original data
         if self.resize_func is not None:
-            img, kps, transform_params = self.resize_func(img, kps)  # resize image
+            img, kps, resize_params = self.resize_func(img, kps)  # resize image
+            resize_params = torch.tensor(resize_params)
+        else:
+            resize_params = torch.tensor([])
 
         if self.normalize_func is not None:
             img = self.normalize_func(img)
 
         if self.augmentation is not None:
-            img, kps = self.augmentation.transform(img, kps)
+            img, kps_ = self.augmentation.transform(img, kps[:,:2])
+            kps[:,:2] = kps_
 
         h, w, c = img.shape
         hm = heatmap_from_kps((h // self.downsampling_factor, w // self.downsampling_factor, self._num_classes),
@@ -94,12 +121,7 @@ class WFLWDataset(BaseDataset):
         # normalize keypoint location
         # kps[:, 0] /= w
         # kps[:, 1] /= h
-
-        if transform_params is None:
-            transform_params = torch.tensor([])
-        else:
-            transform_params = torch.tensor(transform_params)
-        return img, kps, hm, transform_params
+        return img, kps, hm, resize_params
 
     def _downsample_heatmap_kps(self, kps):
         kps[:, :2] /= self.downsampling_factor
