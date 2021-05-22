@@ -95,7 +95,7 @@ class WFLWDataset(BaseDataset):
         if not self.in_memory:
             img = load_image(self.images[idx])
         else:
-            img = self.images[idx]
+            img = self.images[idx].copy()
 
         kps = self.annotations[idx].copy()  # always using a deep copy to prevent modification on original data
         if self.resize_func is not None:
@@ -104,12 +104,12 @@ class WFLWDataset(BaseDataset):
         else:
             resize_params = torch.tensor([])
 
-        if self.normalize_func is not None:
-            img = self.normalize_func(img)
-
         if self.augmentation is not None:
             img, kps_ = self.augmentation.transform(img, kps[:,:2])
             kps[:,:2] = kps_
+
+        if self.normalize_func is not None:
+            img = self.normalize_func(img)
 
         h, w, c = img.shape
         hm = heatmap_from_kps((h // self.downsampling_factor, w // self.downsampling_factor, self._num_classes),
