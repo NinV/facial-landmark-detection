@@ -14,6 +14,7 @@ from libs.dataset.coco_dataset import KeypointDataset
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
+from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion
 
 
 def parse_args():
@@ -23,7 +24,7 @@ def parse_args():
     parser.add_argument("--num_classes", default=98, type=int, help="Number of landmark classes")
     parser.add_argument("--image_size", default=512, type=int)
     parser.add_argument("--downsample", action="store_false", help="Disable downsampling")
-    parser.add_argument("--weights", help="load weights")
+    parser.add_argument("--weights", default="", help="load weights")
 
     # dataset
     parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
@@ -50,16 +51,47 @@ def parse_args():
     parser.add_argument("--radius", type=int, default=4)
     parser.add_argument("--lr", type=float, default=10e-4)
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph model")
+
     # parser.add_argument("--learning_rate", type=float, default=10e-3, help="Initial learning rate")
     # parser.add_argument("--decay_steps", type=float, default=10000, help="learning rate decay step")
     # parser.add_argument("--decay_rate", type=float, default=0.995, help="learning rate decay rate")
     # parser.add_argument("--staircase", action="store_true", help="learning rate decay on step (default: smooth)")
+
+    # augmentation
+    parser.add_argument("--augmentation", action="store_true")
+    parser.add_argument("--tx", nargs='+', type=float, default=[-0.1, 0.1])
+    parser.add_argument("--ty", nargs='+', type=float, default=[-0.1, 0.1])
+    parser.add_argument("--t_prob", type=float, default=0.5)
+    parser.add_argument("--rot", nargs='+', type=float, default=[-10, 10])
+    parser.add_argument("--scale", nargs='+', type=float, default=[0.8, 1.2])
+    parser.add_argument("--rot_and_scale_prob", type=float, default=0.5)
+    parser.add_argument("--color", type=float, default=0.5)
+    parser.add_argument("--hue", type=float, default=0.2)
+    parser.add_argument("--saturation", type=float, default=1.5)
+    parser.add_argument("--exposure", type=float, default=1.5)
+    """
+    hue=0.2, saturation=1.5, exposure=1.5
+    """
+
     return parser.parse_args()
 
 
 def create_folder(path):
     path = pathlib.Path(path)
     path.mkdir(parents=True, exist_ok=True)
+
+
+def get_augmentation(args):
+    # translation = RandomTranslation((-0.1, 0.1), (-0.1, 0.1))
+    translation = RandomTranslation(args.tx, args.ty)
+    # rotation_and_scaling = RandomScalingAndRotation((-10, 10), (0.8, 1.2))
+    rotation_and_scaling = RandomScalingAndRotation(args.rot, args.scale)
+    color_distortion = ColorDistortion(hue=args.hue, saturation=args.saturation, exposure=args.exposure)
+    # blurring = GaussianBlur(0.5)
+    transform = SequentialTransform([translation, rotation_and_scaling], [args.t_prob, args.rot_and_scale_prob],
+                                    [color_distortion], [args.color],
+                                    (args.image_size, args.image_size))
+    return transform
 
 
 def train_one_epoch(net, optimizer, loader, epoch, device, args):
@@ -121,7 +153,17 @@ def main(args):
     graph_model_configs = None
     net = HGLandmarkModel(3, args.num_classes, dims, graph_model_configs, device,
                           include_graph_model=False, downsample= args.downsample)
+    if args.weights:
+        print("Load pretrained weight at:", args.weights )
+        net.load_state_dict(torch.load(args.weights))
+
     keypoint_label_names = list(range(args.num_classes))
+
+    if args.augmentation:
+        transform = get_augmentation(args)
+    else:
+        transform = None
+
     if args.format == "COCO":
         dataset = KeypointDataset(args.annotation,
                                   args.images,
@@ -129,7 +171,8 @@ def main(args):
                                   keypoint_label_names=keypoint_label_names,
                                   downsampling_factor=net.downsampling_factor,
                                   in_memory=args.in_memory,
-                                  radius=args.radius)
+                                  radius=args.radius,
+                                  augmentation=transform)
     elif args.format == "WFLW":
         dataset = WFLWDataset(args.annotation,
                               args.images,
@@ -139,7 +182,9 @@ def main(args):
                               in_memory=args.in_memory,
                               crop_face_storing="temp/train",
                               radius=args.radius,
+                              augmentation=transform
                               )
+
     else:
         raise ValueError("Wrong data format")
 
@@ -161,23 +206,12 @@ def main(args):
                                               generator=torch.Generator().manual_seed(args.seed))
 
     train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    eval_train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size * 2, drop_last=False)
+    # eval_train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size * 2, drop_last=False)
     eval_test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
 
-    training_config = {"batch_size": args.batch_size,
-                       "epochs": args.epochs,
-                       "radius": args.radius,
-                       "learning_rate": args.lr,
-                       "image_size": args.image_size,
-                       "num_classes": args.num_classes,
-                       "normalized_index": args.normalized_index,
-                       "downsample": args.downsample}
-    if args.test_images:
-        training_config["split"] = args.split
-        training_config["seed"] = args.seed
     wandb.init(project="gnn-landmarks",
-               config=training_config)
+               config=args)
 
     for epoch in range(1, args.epochs + 1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
@@ -202,3 +236,4 @@ def main(args):
 if __name__ == '__main__':
     args = parse_args()
     main(args)
+
