@@ -8,7 +8,6 @@ class GraphModel(nn.Module):
         super(GraphModel, self).__init__()
         self.hidden = [input_dim,*hidden_node_dim,output_dim]
         self.W = [ nn.Linear( self.hidden[i] , self.hidden[i + 1] , bias=True ) for i in range(len(self.hidden)-1)]
-        print(self.W)
         self.E = nn.Linear(2 , 1 , bias=True )
         self.relu = nn.ReLU(inplace=True)
 
