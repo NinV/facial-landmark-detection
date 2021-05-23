@@ -32,7 +32,7 @@ class GraphModel(nn.Module):
             for i in range(h.shape[0]):
                 node_i = h[i,:]
                 for j in range(Edge.shape[0]):
-                    node_i += Edge[i,j].item()*h[i,:] 
+                    node_i += Edge[i,j].item()*h[j,:] 
             h[i,:]= node_i
         return h
 
