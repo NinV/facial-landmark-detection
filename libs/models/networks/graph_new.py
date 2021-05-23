@@ -27,7 +27,9 @@ class GraphModel(nn.Module):
                     Edge[i,j] = self.E(feature)
         h = node_feature
         for i in range(len(self.W)):
+            # feed forward
             h = self.relu(self.W[i](h))
+            # update weight node
             for i in range(h.shape[0]):
                 node_i = h[i,:]
                 for j in range(Edge.shape[0]):
