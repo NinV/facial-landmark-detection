@@ -1,3 +1,4 @@
+import random
 import cv2
 import numpy as np
 
@@ -86,4 +87,4 @@ def per_image_normalization(image):
 
 
 def simple_normalize(image):
-    return image/255
+    return image / 255

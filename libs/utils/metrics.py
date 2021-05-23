@@ -1,33 +1,6 @@
 import numpy as np
 
 
-def normalized_mean_error(gts, preds, d_ids):
-    """
-    gt, pred: [{kp1_id: [x1, y1],... }] or [[[x1, y1], [x2, y2], ...]]
-    d_ids: landmark indexes ([kpId1, kpId2]) to calculate normalization distance d. The normalization distance i is
-    the distance between 2 landmarks selected from kpId in ground truth
-    """
-    errors = {}
-
-    for gt_i, pred_i in zip(gts, preds):
-        d = np.linalg.norm(np.array(gt_i[d_ids[0]]) - np.array(gt_i[d_ids[1]]))
-        if isinstance(gt_i, dict):
-            for kpId in gt_i.keys():
-                try:
-                    errors[kpId].append(np.linalg.norm(np.array(gt_i[kpId]) - np.array(pred_i[kpId])) / d)
-                except KeyError:
-                    errors[kpId] = [np.linalg.norm(np.array(gt_i[kpId]) - np.array(pred_i[kpId])) / d]
-        else:
-            for l, (gt_i_l, pred_i_l) in enumerate(zip(gt_i, pred_i)):
-                try:
-                    errors[l].append(np.linalg.norm(np.array(gt_i_l) - np.array(pred_i_l)) / d)
-                except KeyError:
-                    errors[l] = [np.linalg.norm(np.array(gt_i_l) - np.array(pred_i_l)) / d]
-    mean_errors_per_landmark = {kpId: np.mean(err) for kpId, err in errors.items()}
-    nme = np.mean(list(mean_errors_per_landmark.values()))
-    return nme, errors, mean_errors_per_landmark
-
-
 def root_mean_square_error(gts, preds):
     """
         gt, pred: [{kp1_id: [x1, y1, c],... }]
@@ -43,3 +16,33 @@ def root_mean_square_error(gts, preds):
     mean_errors_per_landmark = {kpId: np.mean(err) for kpId, err in errors.items()}
     rmse = np.mean(list(mean_errors_per_landmark.values()))
     return rmse, errors, mean_errors_per_landmark
+
+
+def compute_nme(preds, meta):
+    """
+    source: https://github.com/HRNet/HRNet-Facial-Landmark-Detection
+    """
+    targets = meta['pts']
+    preds = preds.numpy()
+    target = targets.cpu().numpy()
+
+    N = preds.shape[0]
+    L = preds.shape[1]
+    rmse = np.zeros(N)
+
+    for i in range(N):
+        pts_pred, pts_gt = preds[i, ], target[i, ]
+        if L == 19:  # aflw
+            interocular = meta['box_size'][i]
+        elif L == 29:  # cofw
+            interocular = np.linalg.norm(pts_gt[8, ] - pts_gt[9, ])
+        elif L == 68:  # 300w
+            # interocular
+            interocular = np.linalg.norm(pts_gt[36, ] - pts_gt[45, ])
+        elif L == 98:
+            interocular = np.linalg.norm(pts_gt[60, ] - pts_gt[72, ])
+        else:
+            raise ValueError('Number of landmarks is wrong')
+        rmse[i] = np.sum(np.linalg.norm(pts_pred - pts_gt, axis=1)) / (interocular * L)
+
+    return rmse

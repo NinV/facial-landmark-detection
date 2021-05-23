@@ -12,28 +12,36 @@ def make_pre_layer(in_channels, pre_dims=(128, 256)):
 
 
 class HGLandmarkModel(nn.Module):
-    def __init__(self, in_channels, num_classes, hg_dims, graph_model_configs, device="cuda"):
+    def __init__(self, in_channels, num_classes, hg_dims, graph_model_configs, device="cuda",
+                 downsample=False, include_graph_model=True):
         super(HGLandmarkModel, self).__init__()
         self.num_classes = num_classes
         self.device = device
         self.graph_model_configs = graph_model_configs
+        self.include_graph_model = include_graph_model
 
-        self.downsample, self.downsampling_factor, current_dim = make_pre_layer(in_channels)
-        self.stackedHG = StackedHourglass(current_dim, hg_dims)
+        if downsample:
+            self.downsample, self.downsampling_factor, current_dim = make_pre_layer(in_channels)
+            self.stackedHG = StackedHourglass(current_dim, hg_dims)
+        else:
+            self.downsample = None
+            self.downsampling_factor = 1
+            self.stackedHG = StackedHourglass(in_channels, hg_dims)
 
         # heatmap prediction
         self.hm = nn.Sequential(nn.Conv2d(hg_dims[1][0], num_classes, kernel_size=3, padding=1, stride=1),
                                 nn.Sigmoid())
-
-        self.graph_model = get_graph_model()
+        if self.include_graph_model:
+            self.graph_model = get_graph_model()
         self.to(self.device)
-        print(next(self.parameters()).is_cuda)
 
     def forward(self, x):
-        x = self.downsample(x)
+        if self.downsample is not None:
+            x = self.downsample(x)
         x = self.stackedHG(x)
         hm = self.hm(x)
-
+        if not self.include_graph_model:
+            return hm
         with torch.no_grad():
             kps_from_heatmap = self.decode_heatmap(hm, 0.)
         node_features = []
@@ -76,7 +84,7 @@ class HGLandmarkModel(nn.Module):
                     indices_x, indices_y = indices_x[0], indices_y[0]  # ensure only there only one landmark per class
                     if hm_reduce[i, c, indices_y, indices_x] > confidence_threshold:
                         kps[i].append([indices_x, indices_y, c])
-        return torch.tensor(kps)
+        return torch.tensor(kps)    # TODO: bug arise if some keypoints are removed due to low confidence
 
     def _connecting_node(self, node_pos):
         configs = self.graph_model_configs

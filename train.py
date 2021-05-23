@@ -7,7 +7,8 @@ import wandb
 
 # from libs.models.networks.hourglass import StackedHourglass
 from libs.models.networks.models import HGLandmarkModel
-from libs.dataset.dataset import KeypointDataset
+from libs.dataset.coco_dataset import KeypointDataset
+from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.heatmap import decode_heatmap
 from libs.utils.metrics import normalized_mean_error
@@ -22,6 +23,7 @@ def parse_args():
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
     parser.add_argument("--split", type=float, default=0.9, help="Train-Test split ratio")
     parser.add_argument("--seed", type=int, default=42, help="random seed for train-test split")
+    parser.add_argument("--format", default="WFLW", help="dataset format: 'WFLW', 'COCO'")
 
     # save config
     parser.add_argument("-s", "--saved_folder", default="saved_models", help="folder for saving model")
@@ -33,6 +35,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--radius", type=int, default=4)
     parser.add_argument("--lr", type=float, default=10e-4)
+    parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph model")
     # parser.add_argument("--learning_rate", type=float, default=10e-3, help="Initial learning rate")
     # parser.add_argument("--decay_steps", type=float, default=10000, help="learning rate decay step")
     # parser.add_argument("--decay_rate", type=float, default=0.995, help="learning rate decay rate")
@@ -45,7 +48,7 @@ def create_folder(path):
     path.mkdir(parents=True, exist_ok=True)
 
 
-def train_one_epoch(net, optimizer, loader, epoch, device):
+def train_one_epoch(net, optimizer, loader, epoch, device, args):
     net.train()
     for i, data in enumerate(loader):
         img, gt_kps, gt_hm, _ = data
@@ -126,12 +129,23 @@ def main(args):
     net = HGLandmarkModel(3, 15, dims, graph_model_configs, device)
 
     keypoint_label_names = list(range(15))
-    dataset = KeypointDataset(args.annotation,
+    if args.format == "COCO":
+        dataset = KeypointDataset(args.annotation,
+                                  args.images,
+                                  keypoint_label_names=keypoint_label_names,
+                                  downsampling_factor=4,
+                                  in_memory=args.in_memory,
+                                  radius=args.radius)
+    elif args.format == "WFLW":
+        dataset = WFLWDataset(args.annotation,
                               args.images,
-                              keypoint_label_names=keypoint_label_names,
                               downsampling_factor=4,
                               in_memory=args.in_memory,
-                              radius=args.radius)
+                              radius=args.radius,
+                              num_landmarks=98
+                              )
+    else:
+        raise ValueError("Wrong data format")
 
     num_training = int(len(dataset) * args.split)
     num_testing = len(dataset) - num_training
@@ -150,7 +164,7 @@ def main(args):
 
     for epoch in range(1, args.epochs+1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
-        train_one_epoch(net, optimizer, train_loader, epoch, device)
+        train_one_epoch(net, optimizer, train_loader, epoch, device, args)
 
         print("Evaluating on training set")
         train_hm_loss, train_regr_loss, train_nme = run_evaluation(net, eval_train_loader, epoch, device)

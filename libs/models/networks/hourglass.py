@@ -98,6 +98,8 @@ class Hourglass(nn.Module):
         self.low3 = residual(dims[n], curr_dim)  # back to original channel size
         self.up2 = nn.Upsample(scale_factor=2)
 
+        self.features = None
+
     def forward(self, x):
         if self.pre is not None:
             x = self.pre(x)   # (H, W, in_channels) -> (H, W, C1)
@@ -109,7 +111,9 @@ class Hourglass(nn.Module):
         x = self.low2(x)    # (H/2, W/2, C2)
         x = self.low3(x)    # (H/2, W/2, C1)
         up2 = self.up2(x)   # (H, W, C1)
-        return up1 + up2    # (H, W, C1)
+        out = up1 + up2
+        self.features = out.clone()
+        return out    # (H, W, C1)
 
 
 class StackedHourglass(nn.Module):
@@ -120,10 +124,20 @@ class StackedHourglass(nn.Module):
         super(StackedHourglass, self).__init__()
         self.hg1 = Hourglass(in_channels, dims[0])
         self.hg2 = Hourglass(dims[0][0], dims[1])
-        # self.inter_layer = residual(dims[0][1], dims[1][0])
 
     def forward(self, x):
         x = self.hg1(x)
-        # x = self.inter_layer(x)
         out = self.hg2(x)
         return out
+
+    def pooling_feature(self, loc):
+        x, y = loc
+        features = []
+        for hg in [self.hg2, self.hg1]:
+            # recursive finding features
+            downsampling = 1
+            while isinstance(hg, Hourglass):
+                features.append(hg.features[:, :, y//downsampling, x//downsampling])
+                hg = hg.low2
+                downsampling *= 2
+        return torch.cat(features, dim=1)
