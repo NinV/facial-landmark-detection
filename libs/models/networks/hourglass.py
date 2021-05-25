@@ -132,17 +132,17 @@ class StackedHourglass(nn.Module):
         out = self.hg2(x)
         return out
 
-    def pooling_feature(self, loc):
+    def pooling_feature(self, batch, loc):
         x, y = loc
         features = []
         for hg in [self.hg2, self.hg1]:
             # recursive finding features
             downsampling = 1
             while isinstance(hg, Hourglass):
-                features.append(hg.features[:, :, y//downsampling, x//downsampling])
+                features.append(hg.features[batch, :, y//downsampling, x//downsampling])
                 hg = hg.low2
                 downsampling *= 2
-        return torch.cat(features, dim=1)
+        return torch.cat(features, dim=0)
 
 
 def make_pre_layer(in_channels, pre_dims=(128, 256)):

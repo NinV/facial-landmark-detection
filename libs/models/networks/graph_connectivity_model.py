@@ -149,7 +149,7 @@ class GCNLandmark(nn.Module):
 
     def forward(self, node_positions, node_confidences, visual_features):
         """
-        :param node_positions: [num_nodes, 2]
+        :param node_positions: [num_nodes, 2] - should be normalized
         :param node_confidences: [num_nodes, 1]
         :param visual_features: [num_nodes, dims]
         """
