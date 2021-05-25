@@ -19,7 +19,10 @@ class LandmarkModel(nn.Module):
         self.gcn_model = GCNLandmark(gcn_config).to(self.device)
 
     def forward(self, x):
-        hm = self.hm_model(x)
+        self.hm_model.eval()
+        with torch.no_grad():
+            hm = self.hm_model(x)
+
         kps_from_hm = self.hm_model.decode_heatmap(hm, confidence_threshold=0)  # (batch_size, num_classes, 3)
         batch_size, num_classes, h, w = hm.size()
         hm_size = torch.tensor([h, w])

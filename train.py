@@ -86,7 +86,6 @@ def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_
     #     net.gcn_model.train()
     # else:
     #     net.train()
-
     for i, data in enumerate(loader):
         img, gt_kps, gt_hm, _ = data
         img = img.to(device, dtype=torch.float)
@@ -110,8 +109,8 @@ def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_
         loss = hm_loss + regression_loss
         loss.backward()
         optimizer.step()
-        print("batch {}/{}, heat map loss: {}".format(i + 1, len(loader),
-                                                      loss.item()))
+        print("batch {}/{}, heat map loss: {}, regression loss: {}".format(i + 1, len(loader),
+                                                                       hm_loss.item(), regression_loss.item()))
         wandb.log({'train_hm_loss (step)': hm_loss.item(),
                    'train_regr_loss (step)': regression_loss.item(),
                    'epoch': epoch,
@@ -166,6 +165,9 @@ def main(args):
     #     net.load_state_dict(torch.load(args.weights))
 
     net = LandmarkModel(heatmap_mode_config, edict(graph_model_config), "train", device)
+    if args.weights:
+        print("Load pretrained weight at:", args.weights )
+        net.hm_model.load_state_dict(torch.load(args.weights))
 
     # data loader
     keypoint_label_names = list(range(heatmap_mode_config["num_classes"]))
