@@ -38,4 +38,4 @@ class LandmarkModel(nn.Module):
             node_positions_normalized = (node_positions[i] / hm_size).to(self.device)
             out.append(self.gcn_model(node_positions_normalized, node_confidences, visual_features))
 
-        return torch.stack(out, dim=0)
+        return hm, torch.stack(out, dim=0)
