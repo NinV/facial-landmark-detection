@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import random_split
 import wandb
 
-from libs.models.networks.models import HGLandmarkModel
+from libs.models.networks.hourglass import HGLandmarkModel
 from libs.dataset.coco_dataset import KeypointDataset
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
@@ -82,9 +82,7 @@ def create_folder(path):
 
 
 def get_augmentation(args):
-    # translation = RandomTranslation((-0.1, 0.1), (-0.1, 0.1))
     translation = RandomTranslation(args.tx, args.ty)
-    # rotation_and_scaling = RandomScalingAndRotation((-10, 10), (0.8, 1.2))
     rotation_and_scaling = RandomScalingAndRotation(args.rot, args.scale)
     color_distortion = ColorDistortion(hue=args.hue, saturation=args.saturation, exposure=args.exposure)
     # blurring = GaussianBlur(0.5)
@@ -148,11 +146,7 @@ def main(args):
 
     # create network
     dims = [[256, 256, 384], [384, 384, 512]]
-    # graph_model_configs = {"nodes_connecting": "topk",
-    #                        "k": 2}
-    graph_model_configs = None
-    net = HGLandmarkModel(3, args.num_classes, dims, graph_model_configs, device,
-                          include_graph_model=False, downsample= args.downsample)
+    net = HGLandmarkModel(3, args.num_classes, dims, args.downsample, device=device)
     if args.weights:
         print("Load pretrained weight at:", args.weights )
         net.load_state_dict(torch.load(args.weights))
