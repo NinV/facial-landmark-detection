@@ -15,7 +15,7 @@ class LandmarkModel(nn.Module):
         super(LandmarkModel, self).__init__()
         self.mode = mode
         self.device = device
-        self.hm_model = HGLandmarkModel(**hm_model_config).to(self.device)
+        self.hm_model = HGLandmarkModel(**hm_model_config, device=device).to(self.device)
         self.gcn_model = GCNLandmark(gcn_config).to(self.device)
 
     def forward(self, x):

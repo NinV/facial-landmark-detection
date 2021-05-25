@@ -154,7 +154,7 @@ def make_pre_layer(in_channels, pre_dims=(128, 256)):
 
 
 class HGLandmarkModel(nn.Module):
-    def __init__(self, in_channels, num_classes, hg_dims, downsample=False, device="cuda"):
+    def __init__(self, in_channels, num_classes, hg_dims, downsample=False, device=torch.device("cuda")):
         super(HGLandmarkModel, self).__init__()
         self.num_classes = num_classes
         self.device = device

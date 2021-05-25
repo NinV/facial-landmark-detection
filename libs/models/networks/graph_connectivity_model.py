@@ -105,10 +105,10 @@ class GCNLayer(nn.Module):
 
 class GCNLandmark(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config, device=torch.device("cuda")):
         super(GCNLandmark, self).__init__()
         self.num_classes = config.num_classes
-        self.device = config.device
+        self.device = device
         self.self_connection = config.self_connection
         if config.graph_norm == "softmax":
             self.graph_norm = torch.softmax
