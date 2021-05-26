@@ -128,15 +128,14 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             img = img.to(device, dtype=torch.float)
             gt_hm = gt_hm.to(device, dtype=torch.float)
             pred_hm, pred_kps_graph = net(img)
-
-
+            pred_kps_graph = pred_kps_graph.cpu()
             batch_size, num_classes, h, w = pred_hm.size()
             hm_size = torch.tensor([h, w])
             pred_kps_graph *= hm_size
 
             hm_loss = heatmap_loss(pred_hm, gt_hm)
             running_hm_loss += (hm_loss.item() * len(img))
-            pred_kps_hm = net.decode_heatmap(pred_hm, confidence_threshold=0.0)
+            pred_kps_hm = net.hm_model.decode_heatmap(pred_hm, confidence_threshold=0.0)
             nme_hm = np.sum(compute_nme(pred_kps_hm[:, :, :2], {'pts': gt_kps[:, :, :2]}), keepdims=False)
             nme_graph = np.sum(compute_nme(pred_kps_graph, {'pts': gt_kps[:, :, :2]}), keepdims=False)
             running_nme_hm += nme_hm
