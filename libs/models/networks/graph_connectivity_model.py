@@ -40,7 +40,8 @@ class EdgeWeights(nn.Module):
         x = self.linear(x)
         x = F.relu(x, inplace=True)
         x = self.out(x)
-        return torch.sigmoid(x)
+        # return torch.sigmoid(x)
+        return x
 
 
 class VisualFeatureEmbedding(nn.Module):
@@ -94,12 +95,13 @@ class GCNLayer(nn.Module):
         out = torch.empty((num_nodes, self.out_features), device=device)
         for i in range(num_nodes):
             messages = F.linear(x, self.w1)
-            messages = torch.sum(torch.matmul(edges, messages), dim=0)
+            messages = edges[i].view(-1, 1) * messages
+            aggregate = torch.sum(messages, dim=0)
             if self.self_connection:
-                out[i] = messages
+                out[i] = aggregate
             else:
                 target_node = x[i]
-                out[i] = F.linear(target_node, self.w1) + messages
+                out[i] = F.linear(target_node, self.w1) + aggregate
         return out
 
 
