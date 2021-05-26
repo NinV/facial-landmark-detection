@@ -201,10 +201,6 @@ def main(args):
     eval_test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
 
-    wandb.init(project="gnn-landmarks",
-               config={**args, **heatmap_model_config, **graph_model_config})
-    wandb.log()
-
     for epoch in range(1, args.epochs + 1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
         train_one_epoch(net, optimizer, train_loader, epoch, device, args)
@@ -227,6 +223,8 @@ def main(args):
 
 if __name__ == '__main__':
     args = parse_args()
+    wandb.init(project="gnn-landmarks",
+               config={**vars(args), **heatmap_model_config, **graph_model_config})
     main(args)
 
 
