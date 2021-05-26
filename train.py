@@ -15,7 +15,7 @@ from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
 from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion
-from model_config import heatmap_mode_config, graph_model_config
+from model_config import heatmap_model_config, graph_model_config
 
 
 def parse_args():
@@ -163,13 +163,13 @@ def main(args):
     #     print("Load pretrained weight at:", args.weights )
     #     net.load_state_dict(torch.load(args.weights))
 
-    net = LandmarkModel(heatmap_mode_config, edict(graph_model_config), "train", device)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device)
     if args.weights:
         print("Load pretrained weight at:", args.weights )
         net.hm_model.load_state_dict(torch.load(args.weights))
 
     # data loader
-    keypoint_label_names = list(range(heatmap_mode_config["num_classes"]))
+    keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
 
     if args.augmentation:
         transform = get_augmentation(args)
@@ -209,7 +209,8 @@ def main(args):
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
 
     wandb.init(project="gnn-landmarks",
-               config=args)
+               config={**args, **heatmap_model_config, **graph_model_config})
+    wandb.log()
 
     for epoch in range(1, args.epochs + 1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
