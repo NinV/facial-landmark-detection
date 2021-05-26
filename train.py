@@ -15,7 +15,7 @@ from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
 from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion
-from model_config import heatmap_mode_config, graph_model_config
+from model_config import heatmap_model_config, graph_model_config
 
 
 def parse_args():
@@ -156,20 +156,13 @@ def main(args):
     create_folder(args.saved_folder)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # create network
-    # dims = [[256, 256, 384], [384, 384, 512]]
-    # net = HGLandmarkModel(3, args.num_classes, dims, args.downsample, device=device)
-    # if args.weights:
-    #     print("Load pretrained weight at:", args.weights )
-    #     net.load_state_dict(torch.load(args.weights))
-
-    net = LandmarkModel(heatmap_mode_config, edict(graph_model_config), "train", device)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device)
     if args.weights:
         print("Load pretrained weight at:", args.weights )
         net.hm_model.load_state_dict(torch.load(args.weights))
 
     # data loader
-    keypoint_label_names = list(range(heatmap_mode_config["num_classes"]))
+    keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
 
     if args.augmentation:
         transform = get_augmentation(args)
@@ -208,9 +201,6 @@ def main(args):
     eval_test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
 
-    wandb.init(project="gnn-landmarks",
-               config=args)
-
     for epoch in range(1, args.epochs + 1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
         train_one_epoch(net, optimizer, train_loader, epoch, device, args)
@@ -233,6 +223,8 @@ def main(args):
 
 if __name__ == '__main__':
     args = parse_args()
+    wandb.init(project="gnn-landmarks",
+               config={**vars(args), **heatmap_model_config, **graph_model_config})
     main(args)
 
 

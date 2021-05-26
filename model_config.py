@@ -1,4 +1,4 @@
-heatmap_mode_config = {"in_channels": 3,
+heatmap_model_config = {"in_channels": 3,
                        "num_classes": 98,
                        "hg_dims": [[256, 256, 384], [384, 384, 512]],
                        "downsample": True
