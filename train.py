@@ -156,13 +156,6 @@ def main(args):
     create_folder(args.saved_folder)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # create network
-    # dims = [[256, 256, 384], [384, 384, 512]]
-    # net = HGLandmarkModel(3, args.num_classes, dims, args.downsample, device=device)
-    # if args.weights:
-    #     print("Load pretrained weight at:", args.weights )
-    #     net.load_state_dict(torch.load(args.weights))
-
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device)
     if args.weights:
         print("Load pretrained weight at:", args.weights )
