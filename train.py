@@ -104,7 +104,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_
         hm_loss = heatmap_loss(pred_hm, gt_hm)
 
         #  regression loss
-        regression_loss = torch.nn.L1Loss(reduction="sum")(pred_kps, gt_kps[:, :, :2])
+        regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps, gt_kps[:, :, :2])
 
         loss = hm_loss + regression_loss
         loss.backward()
