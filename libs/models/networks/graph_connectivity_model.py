@@ -6,6 +6,32 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class Linear(nn.Module):
+    def __init__(self, in_features, out_features, activation="", batchnorm=True):
+        super(Linear, self).__init__()
+        self.linear = nn.Linear(in_features, out_features)
+
+        if activation == "relu":
+            self.activation = torch.relu
+        elif activation == "sigmoid":
+            self.activation = torch.sigmoid
+        elif activation == "tanh":
+            self.activation = torch.tanh
+        elif activation == "":
+            self.activation = nn.Identity()
+
+        if batchnorm:
+            self.bn = nn.BatchNorm1d(out_features)
+        else:
+            self.bn = nn.Identity()
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.activation(x)
+        out = self.bn(x)
+        return out
+
+
 class ClassEmbedding(nn.Module):
     def __init__(self, num_classes, hidden_sizes, embedding_size):
         super(ClassEmbedding, self).__init__()
@@ -13,10 +39,10 @@ class ClassEmbedding(nn.Module):
         layers = []
         current_dim = num_classes * 2
         for h in hidden_sizes:
-            layers.append(nn.Linear(current_dim, h))
+            layers.append(Linear(current_dim, h, activation="relu"))
             current_dim = h
         self.hidden_layers = nn.ModuleList(layers)
-        self.out = nn.Linear(current_dim, embedding_size)
+        self.out = Linear(current_dim, embedding_size, activation="relu", batchnorm=False)
 
     def forward(self, x):
         """
@@ -25,22 +51,19 @@ class ClassEmbedding(nn.Module):
         x = F.one_hot(x, num_classes=self.num_classes).view(-1, 2 * self.num_classes).float()
         for layer in self.hidden_layers:
             x = layer(x)
-            x = F.relu(x)
-        x = self.out(x)
-        return torch.sigmoid(x)
+        out = self.out(x)
+        return out
 
 
 class EdgeWeights(nn.Module):
     def __init__(self, embedding_size=1, hidden=4):
         super(EdgeWeights, self).__init__()
-        self.linear = nn.Linear(embedding_size + 2, hidden)
-        self.out = nn.Linear(hidden, 1)
+        self.linear = Linear(embedding_size + 2, hidden, activation="relu")
+        self.out = Linear(hidden, 1, activation="relu")
 
     def forward(self, x):
         x = self.linear(x)
-        x = F.relu(x, inplace=True)
         x = self.out(x)
-        # return torch.sigmoid(x)
         return x
 
 
@@ -51,15 +74,14 @@ class VisualFeatureEmbedding(nn.Module):
         layers = []
         current_dim = in_channels
         for h in hidden_dims:
-            layers.append(nn.Linear(current_dim, h))
+            layers.append(Linear(current_dim, h, activation="relu"))
             current_dim = h
         self.hidden_layers = nn.ModuleList(layers)
-        self.out = nn.Linear(current_dim, embedding_size)
+        self.out = Linear(current_dim, embedding_size, activation="relu", batchnorm=False)
 
     def forward(self, x):
         for layer in self.hidden_layers:
             x = layer(x)
-            x = F.relu(x)
         x = self.out(x)
         return x
 
