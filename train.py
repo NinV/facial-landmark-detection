@@ -158,8 +158,15 @@ def main(args):
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device)
     if args.weights:
-        print("Load pretrained weight at:", args.weights )
-        net.hm_model.load_state_dict(torch.load(args.weights))
+        # parser.add_argument("--model", default="full", help="specific loaded model type in: ['backbone', 'full'] ")
+        if args.model == "backbone":
+            print("Load pretrained backbone weights at:", args.weights)
+            net.hm_model.load_state_dict(torch.load(args.weights))
+        elif args.model == "full":
+            print("Load pretrained full model weights at:", args.weights)
+            net.load_state_dict(torch.load(args.weights))
+        else:
+            raise ValueError("wrong model type")
 
     # data loader
     keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
