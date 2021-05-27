@@ -65,23 +65,29 @@ class VisualFeatureEmbedding(nn.Module):
 
 
 class GCNLayer(nn.Module):
-    def __init__(self, in_features, out_features, self_connection=False):
+    def __init__(self, in_features, out_features, self_connection=False, include_shape_feature=True):
         super(GCNLayer, self).__init__()
         self.in_features, self.out_features = in_features, out_features
         self.self_connection = self_connection
+        self.include_shape_feature = include_shape_feature
 
-        self.w1 = torch.nn.Parameter(torch.Tensor(out_features, in_features))
+        if include_shape_feature:
+            # +2 for shape feature
+            self.w1 = torch.nn.Parameter(torch.Tensor(out_features, in_features + 2))
+        else:
+            self.w1 = torch.nn.Parameter(torch.Tensor(out_features, in_features))
         nn.init.kaiming_uniform_(self.w1, a=math.sqrt(5))
 
         if not self_connection:
             self.w2 = torch.nn.Parameter(torch.Tensor(out_features, in_features))
             nn.init.kaiming_uniform_(self.w2, a=math.sqrt(5))
 
-    def forward(self, x, edges):
+    def forward(self, x, edges, distance_matrix):
         """
         :param x: (num_classes, in_features)
-        :param edges: (num_classes, in_features), should be transpose before putting into this function because
-        we're using F.linear instead of matmul
+        :param edges: (num_classes, in_features)
+        :param distance_matrix: (num_classes, num_classes, 2)
+
 
         using F.linear instead of matmul may improve performance:
         https://discuss.pytorch.org/t/why-does-the-linear-module-seems-to-do-unnecessary-transposing/6277/2
@@ -94,14 +100,18 @@ class GCNLayer(nn.Module):
         num_nodes = x.size()[0]
         out = torch.empty((num_nodes, self.out_features), device=device)
         for i in range(num_nodes):
-            messages = F.linear(x, self.w1)
+            if self.include_shape_feature:
+                x_with_shape = torch.cat([x, distance_matrix[i]], dim=1)
+                messages = F.linear(x_with_shape, self.w1)
+            else:
+                messages = F.linear(x, self.w1)
             messages = edges[i].view(-1, 1) * messages
             aggregate = torch.sum(messages, dim=0)
             if self.self_connection:
                 out[i] = aggregate
             else:
                 target_node = x[i]
-                out[i] = F.linear(target_node, self.w1) + aggregate
+                out[i] = F.linear(target_node, self.w2) + aggregate
         return out
 
 
@@ -128,9 +138,11 @@ class GCNLandmark(nn.Module):
         self.gcn_dims = config.GCN_dims
         gcn_layers = []
         current_dim = config.visual_embedding_size + 2  # +2 for 2D location
+        include_shape_feature = True
         for h in self.gcn_dims:
-            gcn_layers.append(GCNLayer(current_dim, h, self.self_connection))
+            gcn_layers.append(GCNLayer(current_dim, h, self.self_connection, include_shape_feature))
             current_dim = h
+            include_shape_feature = False
         gcn_layers.append(GCNLayer(current_dim, 2, self.self_connection))
         self.gcn_layers = torch.nn.ModuleList(gcn_layers)
 
@@ -175,10 +187,12 @@ class GCNLandmark(nn.Module):
 
         # construct node features
         visual_embedding = self.visual_feature_embedding(visual_features)
+
+        distance_matrix = node_positions.view(self.num_classes, 1, 2) - node_positions.view(1, self.num_classes, 2)
         node_features = torch.cat([node_positions, visual_embedding], dim=1)
 
         # GCN forward
         x = node_features
         for layer in self.gcn_layers:
-            x = layer(x, edges_full)
+            x = layer(x, edges_full, distance_matrix)
         return x
