@@ -23,6 +23,7 @@ def parse_args():
 
     # weights config
     parser.add_argument("--weights", default="", help="load weights")
+    parser.add_argument("--model", default="full", help="specific loaded model type in: ['backbone', 'full'] ")
 
     # dataset
     parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
@@ -158,7 +159,6 @@ def main(args):
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device)
     if args.weights:
-        # parser.add_argument("--model", default="full", help="specific loaded model type in: ['backbone', 'full'] ")
         if args.model == "backbone":
             print("Load pretrained backbone weights at:", args.weights)
             net.hm_model.load_state_dict(torch.load(args.weights))
