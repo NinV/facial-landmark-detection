@@ -46,7 +46,8 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--radius", type=int, default=4)
-    parser.add_argument("--lr", type=float, default=10e-4)
+    parser.add_argument("--lr", type=float, default=10e-4, help="backbone learning rate")
+    parser.add_argument("--gcn_lr", type=float, default=10e-3, help="gcn learning rate")
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph model")
 
     # augmentation
@@ -82,11 +83,6 @@ def get_augmentation(args):
 
 
 def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_graph_only"):
-    # if training_mode=="train_graph_only":
-    #     net.hm_model.eval()
-    #     net.gcn_model.train()
-    # else:
-    #     net.train()
     for i, data in enumerate(loader):
         img, gt_kps, gt_hm, _ = data
         img = img.to(device, dtype=torch.float)
@@ -121,6 +117,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_
 def run_evaluation(net, loader, epoch, device, prefix='val'):
     net.eval()
     running_hm_loss = 0
+    running_regression_loss = 0
     running_nme_hm = 0
     running_nme_graph = 0
     with torch.no_grad():
@@ -128,14 +125,21 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             img, gt_kps, gt_hm, _ = data
             img = img.to(device, dtype=torch.float)
             gt_hm = gt_hm.to(device, dtype=torch.float)
+            gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm, pred_kps_graph = net(img)
+
+            hm_loss = heatmap_loss(pred_hm, gt_hm)
+            running_hm_loss += (hm_loss.item() * len(img))
+
+            #  regression loss
+            regression_loss = torch.nn.L1Loss(reduction="sum")(pred_kps_graph, gt_kps[:, :, :2])
+            running_regression_loss += regression_loss.item()
+
             pred_kps_graph = pred_kps_graph.cpu()
             batch_size, num_classes, h, w = pred_hm.size()
             hm_size = torch.tensor([h, w])
             pred_kps_graph *= hm_size
 
-            hm_loss = heatmap_loss(pred_hm, gt_hm)
-            running_hm_loss += (hm_loss.item() * len(img))
             pred_kps_hm = net.hm_model.decode_heatmap(pred_hm, confidence_threshold=0.0)
             nme_hm = np.sum(compute_nme(pred_kps_hm[:, :, :2], {'pts': gt_kps[:, :, :2]}), keepdims=False)
             nme_graph = np.sum(compute_nme(pred_kps_graph, {'pts': gt_kps[:, :, :2]}), keepdims=False)
@@ -143,9 +147,11 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             running_nme_graph += nme_graph
     num_samples = len(loader.dataset)
     running_hm_loss /= num_samples
+    running_regression_loss /= num_samples
     running_nme_hm /= num_samples
-    running_nme_graph /=num_samples
+    running_nme_graph /= num_samples
     wandb.log({'{}_hm_loss'.format(prefix): running_hm_loss,
+               '{}_regr_loss'.format(prefix): running_regression_loss,
                '{}_nme (hm)'.format(prefix): running_nme_hm,
                '{}_nme (graph)'.format(prefix): running_nme_graph,
                'epoch': epoch})
@@ -206,7 +212,11 @@ def main(args):
     train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
     # eval_train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size * 2, drop_last=False)
     eval_test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
-    optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
+    # optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam([
+                {'params': net.hm_model.parameters(), 'lr': args.lr},
+                {'params': net.gcn_model.parameters(), 'lr': args.gcn_lr}
+            ])
 
     for epoch in range(1, args.epochs + 1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
