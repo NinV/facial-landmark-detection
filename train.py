@@ -132,8 +132,9 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
             running_hm_loss += (hm_loss.item() * len(img))
 
             #  regression loss
-            regression_loss = torch.nn.L1Loss(reduction="sum")(pred_kps_graph, gt_kps[:, :, :2])
-            running_regression_loss += regression_loss.item()
+            batch_size, _, _, _ = pred_hm.size()
+            regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
+            running_regression_loss += (regression_loss.item() * batch_size)
 
             pred_kps_graph = pred_kps_graph.cpu()
             batch_size, num_classes, h, w = pred_hm.size()
