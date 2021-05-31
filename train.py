@@ -48,7 +48,8 @@ def parse_args():
     parser.add_argument("--radius", type=int, default=4)
     parser.add_argument("--lr", type=float, default=10e-4, help="backbone learning rate")
     parser.add_argument("--gcn_lr", type=float, default=10e-3, help="gcn learning rate")
-    parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph model")
+    parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
+    parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
 
     # augmentation
     parser.add_argument("--augmentation", action="store_true")
@@ -82,7 +83,7 @@ def get_augmentation(args):
     return transform
 
 
-def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_graph_only"):
+def train_one_epoch(net, optimizer, loader, epoch, device, opt):
     for i, data in enumerate(loader):
         img, gt_kps, gt_hm, _ = data
         img = img.to(device, dtype=torch.float)
@@ -101,7 +102,10 @@ def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_
         hm_loss = heatmap_loss(pred_hm, gt_hm)
 
         #  regression loss
-        regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps, gt_kps[:, :, :2])
+        if opt.regression_loss == 'L1':
+            regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps, gt_kps[:, :, :2])
+        else:
+            regression_loss = torch.nn.MSELoss(reduction="mean")(pred_kps, gt_kps[:, :, :2])
 
         loss = hm_loss + regression_loss
         loss.backward()
@@ -114,7 +118,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, training_mode="train_
                    'batch': i + 1})
 
 
-def run_evaluation(net, loader, epoch, device, prefix='val'):
+def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
     net.eval()
     running_hm_loss = 0
     running_regression_loss = 0
@@ -133,7 +137,11 @@ def run_evaluation(net, loader, epoch, device, prefix='val'):
 
             #  regression loss
             batch_size, _, _, _ = pred_hm.size()
-            regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
+            if opt.regression_loss == 'L1':
+                regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
+            else:
+                regression_loss = torch.nn.MSELoss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
+            # regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
             running_regression_loss += (regression_loss.item() * batch_size)
 
             pred_kps_graph = pred_kps_graph.cpu()
@@ -229,7 +237,7 @@ def main(args):
         #       end="\n-------------------------------------------\n\n")
 
         print("Evaluating on testing set")
-        val_hm_loss, val_nme = run_evaluation(net, eval_test_loader, epoch, device, prefix="val")
+        val_hm_loss, val_nme = run_evaluation(net, eval_test_loader, epoch, device, args, prefix="val")
         print("hm loss: {}, NME: {}".format(val_hm_loss, val_nme),
               end="\n-------------------------------------------\n\n")
 
