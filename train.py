@@ -129,6 +129,12 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
             img, gt_kps, gt_hm, _ = data
             img = img.to(device, dtype=torch.float)
             gt_hm = gt_hm.to(device, dtype=torch.float)
+            
+            #fix eval
+            batch_size, num_classes, h, w = gt_hm.size()
+            hm_size = torch.tensor([h, w])
+            gt_kps[:, :, :2] /= hm_size
+            
             gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm, pred_kps_graph = net(img)
 
