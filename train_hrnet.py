@@ -192,11 +192,6 @@ def main(args):
         else:
             raise ValueError("wrong model type")
 
-    if args.multi_gpu:
-        # multi-GPU setting
-        net = torch.nn.DataParallel(net)
-    net = net.to("cuda")
-
     # data loader
     keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
 
