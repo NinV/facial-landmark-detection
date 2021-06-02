@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 from libs.models.networks.hourglass import HGLandmarkModel
 from libs.models.networks.graph_connectivity_model import GCNLandmark
+from libs.models.networks.HRNet import get_face_alignment_net as get_HR_model
 
 
 class LandmarkModel(nn.Module):
-    def __init__(self, hm_model_config, gcn_config, mode, device="cuda"):
+    def __init__(self, hm_model_config, gcn_config, mode, device="cuda", use_hrnet=False):
         """
         :param mode:
                     "fine_tune_graph": freeze heatmap model and train GCN model
@@ -15,13 +16,16 @@ class LandmarkModel(nn.Module):
         super(LandmarkModel, self).__init__()
         self.mode = mode
         self.device = device
-        self.hm_model = HGLandmarkModel(**hm_model_config, device=device).to(self.device)
+        if use_hrnet:
+            self.hm_model = get_HR_model().to(self.device)
+        else:
+            self.hm_model = HGLandmarkModel(**hm_model_config, device=device).to(self.device)
         self.gcn_model = GCNLandmark(gcn_config).to(self.device)
 
     def forward(self, x):
-        self.hm_model.eval()
-        with torch.no_grad():
-            hm = self.hm_model(x)
+        # self.hm_model.eval()
+        # with torch.no_grad():
+        hm = self.hm_model(x)
 
         kps_from_hm = self.hm_model.decode_heatmap(hm, confidence_threshold=0)  # (batch_size, num_classes, 3)
         batch_size, num_classes, h, w = hm.size()
