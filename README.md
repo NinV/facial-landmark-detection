@@ -1,2 +1,2 @@
 Download weight for CNN backbone from this [link](https://drive.google.com/drive/folders/1sOXYoV_EIkdZRm0ROErQlmK-r-RG8m7o?usp=sharing)
-
+Pretrained for HRNet on ImageNet from this [link](https://github.com/HRNet/HRNet-Facial-Landmark-Detection)
