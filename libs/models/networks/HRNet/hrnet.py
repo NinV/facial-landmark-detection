@@ -318,6 +318,8 @@ class HighResolutionNet(nn.Module):
                 stride=1,
                 padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0)
         )
+        self.features = None
+        self.downsampling_factor = 4
 
     def _make_transition_layer(
             self, num_channels_pre_layer, num_channels_cur_layer):
@@ -441,8 +443,9 @@ class HighResolutionNet(nn.Module):
         x2 = F.interpolate(x[2], size=(height, width), mode='bilinear', align_corners=False)
         x3 = F.interpolate(x[3], size=(height, width), mode='bilinear', align_corners=False)
         x = torch.cat([x[0], x1, x2, x3], 1)
+        self.features = x.clone()
         x = self.head(x)
-
+        x = torch.sigmoid(x)
         return x
 
     def init_weights(self, pretrained=''):
@@ -466,6 +469,33 @@ class HighResolutionNet(nn.Module):
                     '=> loading {} pretrained model {}'.format(k, pretrained))
             model_dict.update(pretrained_dict)
             self.load_state_dict(model_dict)
+
+    def pooling_feature(self, batch, loc):
+        x, y = loc
+        return self.features[batch, :, y, x]
+
+    @staticmethod
+    def decode_heatmap(hm, confidence_threshold=0.2, kernel=3, one_landmark_per_class=True):
+        """
+        hm : pytorch tensor of shape (num_samples, c, h, w)
+        """
+        pad = (kernel - 1) // 2
+        hmax = F.max_pool2d(hm, (kernel, kernel), stride=1, padding=pad)
+        keep = (hmax == hm).float()
+        hm_reduce = (hm * keep)
+        # find indices
+        kps = []
+        batch_size, num_classes, h, w = hm.size()
+        for i in range(batch_size):
+            kps.append([])
+            for c in range(num_classes):
+                if one_landmark_per_class:
+                    # https://discuss.pytorch.org/t/get-indices-of-the-max-of-a-2d-tensor/82150
+                    indices_y, indices_x = torch.nonzero(hm_reduce[i, c] == torch.max(hm_reduce[i, c]), as_tuple=True)
+                    indices_x, indices_y = indices_x[0], indices_y[0]  # ensure only there only one landmark per class
+                    if hm_reduce[i, c, indices_y, indices_x] > confidence_threshold:
+                        kps[i].append([indices_x, indices_y, c])
+        return torch.tensor(kps)  # TODO: bug arise if some keypoints are removed due to low confidence
 
 
 def _get_face_alignment_net(config, **kwargs):
