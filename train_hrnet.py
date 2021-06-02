@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument("--gcn_lr", type=float, default=10e-3, help="gcn learning rate")
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
     parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
+    parser.add_argument("--multi_gpu", action="store_true")
 
     # augmentation
     parser.add_argument("--augmentation", action="store_true")
@@ -180,6 +181,15 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device, use_hrnet=True)
+    if args.multi_gpu:
+        # multi-GPU setting
+        net = torch.nn.DataParallel(net, device_ids = [0, 1, 2, 3])
+        net = net.to("cuda:{},{},{},{}".format(0,1,2,3))
+    else:
+        # single-GPU setting
+        net = net.to("cuda")
+    "cuda:0,1,2,4"
+
     if args.weights:
         if args.model == "backbone":
             print("Load pretrained backbone weights at:", args.weights)
