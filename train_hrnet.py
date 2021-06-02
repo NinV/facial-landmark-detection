@@ -184,7 +184,7 @@ def main(args):
     if args.multi_gpu:
         # multi-GPU setting
         net = torch.nn.DataParallel(net, device_ids = [0, 1, 2, 3])
-        net = net.to("cuda:{},{},{},{}".format(0,1,2,3))
+        net = net.to("cuda:0")
     else:
         # single-GPU setting
         net = net.to("cuda")
