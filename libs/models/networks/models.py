@@ -31,7 +31,7 @@ class LandmarkModel(nn.Module):
         for i in range(batch_size):
             visual_features = []
             for loc in node_positions[i]:
-                visual_features.append(self.hm_model.stackedHG.pooling_feature(i, loc))
+                visual_features.append(self.hm_model.pooling_feature(i, loc))
             visual_features = torch.stack(visual_features, dim=0)
 
             xs = node_positions[i, :, 0]
