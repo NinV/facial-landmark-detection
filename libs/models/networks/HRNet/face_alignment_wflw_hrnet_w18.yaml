@@ -14,7 +14,7 @@ MODEL:
   NAME: 'hrnet'
   NUM_JOINTS: 98
   INIT_WEIGHTS: true
-  PRETRAINED: 'hrnetv2_pretrained/hrnetv2_w18_imagenet_pretrained.pth'
+  PRETRAINED: 'saved_models/hrnetv2_pretrained/hrnetv2_w18_imagenet_pretrained.pth'
   SIGMA: 1.5
   IMAGE_SIZE:
     - 256
