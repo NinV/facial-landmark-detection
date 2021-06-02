@@ -181,14 +181,6 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device, use_hrnet=True)
-    if args.multi_gpu:
-        # multi-GPU setting
-        net = torch.nn.DataParallel(net, device_ids = [0, 1, 2, 3])
-        net = net.to("cuda:0")
-    else:
-        # single-GPU setting
-        net = net.to("cuda")
-    "cuda:0,1,2,4"
 
     if args.weights:
         if args.model == "backbone":
@@ -199,6 +191,11 @@ def main(args):
             net.load_state_dict(torch.load(args.weights))
         else:
             raise ValueError("wrong model type")
+
+    if args.multi_gpu:
+        # multi-GPU setting
+        net = torch.nn.DataParallel(net)
+    net = net.to("cuda")
 
     # data loader
     keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
