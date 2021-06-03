@@ -445,7 +445,7 @@ class HighResolutionNet(nn.Module):
         x = torch.cat([x[0], x1, x2, x3], 1)
         self.features = x.clone()
         x = self.head(x)
-        x = torch.sigmoid(x)
+        # x = torch.sigmoid(x)
         return x
 
     def init_weights(self, pretrained=''):

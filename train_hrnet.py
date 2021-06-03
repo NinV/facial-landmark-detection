@@ -132,11 +132,6 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
             img = img.to(device, dtype=torch.float)
             gt_hm = gt_hm.to(device, dtype=torch.float)
             
-            # fix eval
-            batch_size, num_classes, h, w = gt_hm.size()
-            hm_size = torch.tensor([h, w])
-            gt_kps[:, :, :2] /= hm_size
-            
             gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm, pred_kps_graph = net(img)
 
@@ -149,7 +144,6 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
                 regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
             else:
                 regression_loss = torch.nn.MSELoss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
-            # regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
             running_regression_loss += (regression_loss.item() * batch_size)
 
             pred_kps_graph = pred_kps_graph.cpu()
@@ -180,7 +174,9 @@ def main(args):
     create_folder(args.saved_folder)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device, use_hrnet=True)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True, freeze_hm_model=True)
+    net.hm_model.load_state_dict(torch.load("saved_models/hrnetv2_pretrained/HR18-WFLW.pth"))
+    net.to(device)
 
     if args.weights:
         if args.model == "backbone":
