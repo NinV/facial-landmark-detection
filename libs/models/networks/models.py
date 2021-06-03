@@ -6,7 +6,7 @@ from libs.models.networks.HRNet import get_face_alignment_net as get_HR_model
 
 
 class LandmarkModel(nn.Module):
-    def __init__(self, hm_model_config, gcn_config, mode, device="cuda", use_hrnet=False):
+    def __init__(self, hm_model_config, gcn_config, device="cuda", use_hrnet=False, freeze_hm_model=False):
         """
         :param mode:
                     "fine_tune_graph": freeze heatmap model and train GCN model
@@ -14,7 +14,7 @@ class LandmarkModel(nn.Module):
                     "inference": inference mode
         """
         super(LandmarkModel, self).__init__()
-        self.mode = mode
+        self.freeze_hm_model = freeze_hm_model
         self.device = device
         if use_hrnet:
             self.hm_model = get_HR_model().to(self.device)
@@ -23,9 +23,12 @@ class LandmarkModel(nn.Module):
         self.gcn_model = GCNLandmark(gcn_config).to(self.device)
 
     def forward(self, x):
-        # self.hm_model.eval()
-        # with torch.no_grad():
-        hm = self.hm_model(x)
+        if self.freeze_hm_model:
+            self.hm_model.eval()
+            with torch.no_grad():
+                hm = self.hm_model(x)
+        else:
+            hm = self.hm_model(x)
 
         kps_from_hm = self.hm_model.decode_heatmap(hm, confidence_threshold=0)  # (batch_size, num_classes, 3)
         batch_size, num_classes, h, w = hm.size()

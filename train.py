@@ -178,7 +178,7 @@ def main(args):
     create_folder(args.saved_folder)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), "train", device)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device)
     if args.weights:
         if args.model == "backbone":
             print("Load pretrained backbone weights at:", args.weights)
