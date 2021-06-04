@@ -37,6 +37,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="random seed for train-test split")
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
     parser.add_argument("--image_size", default=512, type=int)
+    parser.add_argument("--processed_box", action="store_true",
+                        help="process boundbox so that all landmarks are visible")
 
     # save config
     parser.add_argument("-s", "--saved_folder", default="saved_models", help="folder for saving model")
@@ -205,7 +207,8 @@ def main(args):
                           crop_face_storing="temp/train",
                           radius=args.radius,
                           augmentation=transform,
-                          normalize_func=mean_std_normalize)
+                          normalize_func=mean_std_normalize,
+                          hrnet_box=args.processed_box)
 
     if args.test_annotation:
         training_set = dataset
@@ -218,7 +221,8 @@ def main(args):
                                 in_memory=args.in_memory,
                                 crop_face_storing="temp/test",
                                 radius=args.radius,
-                                normalize_func=mean_std_normalize)
+                                normalize_func=mean_std_normalize,
+                                hrnet_box=args.processed_box)
     else:
         num_training = int(len(dataset) * args.split)
         num_testing = len(dataset) - num_training
