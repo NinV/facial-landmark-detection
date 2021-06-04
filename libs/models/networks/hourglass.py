@@ -201,3 +201,6 @@ class HGLandmarkModel(nn.Module):
                     if hm_reduce[i, c, indices_y, indices_x] > confidence_threshold:
                         kps[i].append([indices_x, indices_y, c])
         return torch.tensor(kps)    # TODO: bug arise if some keypoints are removed due to low confidence
+
+    def pooling_feature(self, batch, loc):
+        return self.stackedHG.pooling_feature(batch, loc)

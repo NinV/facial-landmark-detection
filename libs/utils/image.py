@@ -87,4 +87,18 @@ def per_image_normalization(image):
 
 
 def simple_normalize(image):
-    return image / 255
+    return image / 255.
+
+
+def mean_std_normalize(image, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    image = image / 255.
+    image -= mean
+    image /= std
+    return image
+
+
+def reverse_mean_std_normalize(image, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    image *= std
+    image += mean
+    image *= 255
+    return image

@@ -15,6 +15,7 @@ from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
 from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion
+from libs.utils.image import mean_std_normalize
 from model_config import heatmap_model_config, graph_model_config
 
 
@@ -50,6 +51,7 @@ def parse_args():
     parser.add_argument("--gcn_lr", type=float, default=10e-3, help="gcn learning rate")
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
     parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
+    parser.add_argument("--multi_gpu", action="store_true")
 
     # augmentation
     parser.add_argument("--augmentation", action="store_true")
@@ -76,7 +78,6 @@ def get_augmentation(args):
     translation = RandomTranslation(args.tx, args.ty)
     rotation_and_scaling = RandomScalingAndRotation(args.rot, args.scale)
     color_distortion = ColorDistortion(hue=args.hue, saturation=args.saturation, exposure=args.exposure)
-    # blurring = GaussianBlur(0.5)
     transform = SequentialTransform([translation, rotation_and_scaling], [args.t_prob, args.rot_and_scale_prob],
                                     [color_distortion], [args.color],
                                     (args.image_size, args.image_size))
@@ -100,6 +101,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, opt):
         # heatmap loss
         pred_hm, pred_kps = net(img)
         hm_loss = heatmap_loss(pred_hm, gt_hm)
+        # hm_loss = torch.nn.MSELoss(reduction="mean")(pred_hm, gt_hm)
 
         #  regression loss
         if opt.regression_loss == 'L1':
@@ -130,11 +132,6 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
             img = img.to(device, dtype=torch.float)
             gt_hm = gt_hm.to(device, dtype=torch.float)
             
-            #fix eval
-            batch_size, num_classes, h, w = gt_hm.size()
-            hm_size = torch.tensor([h, w])
-            gt_kps[:, :, :2] /= hm_size
-            
             gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm, pred_kps_graph = net(img)
 
@@ -147,7 +144,6 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
                 regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
             else:
                 regression_loss = torch.nn.MSELoss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
-            # regression_loss = torch.nn.L1Loss(reduction="mean")(pred_kps_graph, gt_kps[:, :, :2])
             running_regression_loss += (regression_loss.item() * batch_size)
 
             pred_kps_graph = pred_kps_graph.cpu()
@@ -155,7 +151,7 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
             hm_size = torch.tensor([h, w])
             pred_kps_graph *= hm_size
 
-            pred_kps_hm = net.hm_model.decode_heatmap(pred_hm, confidence_threshold=0.0)
+            pred_kps_hm = net.hm_model.decode_heatmap(pred_hm, confidence_threshold=-0.01)
             nme_hm = np.sum(compute_nme(pred_kps_hm[:, :, :2], {'pts': gt_kps[:, :, :2]}), keepdims=False)
             nme_graph = np.sum(compute_nme(pred_kps_graph, {'pts': gt_kps[:, :, :2]}), keepdims=False)
             running_nme_hm += nme_hm
@@ -178,7 +174,10 @@ def main(args):
     create_folder(args.saved_folder)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True, freeze_hm_model=True)
+    net.hm_model.load_state_dict(torch.load("saved_models/hrnetv2_pretrained/HR18-WFLW.pth"))
+    net.to(device)
+
     if args.weights:
         if args.model == "backbone":
             print("Load pretrained backbone weights at:", args.weights)
@@ -205,7 +204,8 @@ def main(args):
                           in_memory=args.in_memory,
                           crop_face_storing="temp/train",
                           radius=args.radius,
-                          augmentation=transform)
+                          augmentation=transform,
+                          normalize_func=mean_std_normalize)
 
     if args.test_annotation:
         training_set = dataset
@@ -217,7 +217,8 @@ def main(args):
                                 downsampling_factor=net.hm_model.downsampling_factor,
                                 in_memory=args.in_memory,
                                 crop_face_storing="temp/test",
-                                radius=args.radius)
+                                radius=args.radius,
+                                normalize_func=mean_std_normalize)
     else:
         num_training = int(len(dataset) * args.split)
         num_testing = len(dataset) - num_training
