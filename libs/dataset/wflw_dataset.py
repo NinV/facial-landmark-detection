@@ -13,12 +13,12 @@ from libs.utils.heatmap import heatmap_from_kps
 
 
 class WFLWDataset(BaseDataset):
-    def __init__(self, *args, radius=4, crop_face_storing="temp", force_square_shape=False, **kwargs):
+    def __init__(self, *args, radius=4, crop_face_storing="temp", hrnet_box=False, **kwargs):
         self.keypoint_label_names = kwargs["keypoint_label_names"]
         self._num_classes = len(self.keypoint_label_names)
         self.radius = radius
         self.crop_face_storing = crop_face_storing
-        self.force_square_shape = force_square_shape
+        self.hrnet_box = hrnet_box
         super(WFLWDataset, self).__init__(*args, **kwargs)
 
     def _load_images(self):
@@ -50,24 +50,7 @@ class WFLWDataset(BaseDataset):
             img = load_image(self.image_folder / row.image_name)
             h, w = img.shape[:2]
 
-            if self.force_square_shape:
-                # h, w = row.y_max_rect - row.y_min_rect, row.x_max_rect - row.x_min_rect
-                # if h < w:
-                #     size = w
-                #     pad = (w - h) // 2
-                #     x_min_rect, x_max_rect = row.x_min_rect, row.x_max_rect
-                #     y_min_rect = max(row.y_min_rect - pad, 0)
-                #     y_max_rect = y_min_rect + size
-                # else:
-                #     size = h
-                #     pad = (h - w) // 2
-                #     y_min_rect, y_max_rect = row.y_min_rect, row.y_max_rect
-                #     x_min_rect = max(row.x_min_rect - pad, 0)
-                #     x_max_rect = x_min_rect + size
-                #
-                # crop = img[y_min_rect: y_max_rect,
-                #            x_min_rect: x_max_rect]
-
+            if self.hrnet_box:
                 lm_data = np.array(row.to_list()[:self._num_classes*2]).reshape(-1, 2)
                 x_min, x_max = math.floor(np.min(lm_data[:, 0])), math.ceil(np.max(lm_data[:, 0]))
                 y_min, y_max = math.floor(np.min(lm_data[:, 1])), math.ceil(np.max(lm_data[:, 1]))

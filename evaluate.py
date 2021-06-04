@@ -126,7 +126,7 @@ def main(args):
                           crop_face_storing="temp/train",
                           radius=args.radius,
                           normalize_func=mean_std_normalize,
-                          force_square_shape=True
+                          hrnet_box=True
                           )
     run_evaluation(net, dataset, device)
 
