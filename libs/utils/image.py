@@ -95,3 +95,10 @@ def mean_std_normalize(image, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.2
     image -= mean
     image /= std
     return image
+
+
+def reverse_mean_std_normalize(image, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
+    image *= std
+    image += mean
+    image *= 255
+    return image

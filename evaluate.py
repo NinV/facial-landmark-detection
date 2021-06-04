@@ -12,7 +12,7 @@ from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.models.networks.models import LandmarkModel
 from libs.utils.metrics import compute_nme
-from libs.utils.image import mean_std_normalize
+from libs.utils.image import mean_std_normalize, reverse_mean_std_normalize
 from model_config import *
 
 
@@ -28,7 +28,7 @@ def parse_args():
     parser.add_argument("--image_size", default=256, type=int)
 
     # save config
-    parser.add_argument("-s", "--weights", default="saved_models/cnn-baseline-1/HG_epoch_47.pt",
+    parser.add_argument("-s", "--weights", default="saved_models/graph_base_line/frosty-spaceship-175-epoch_19.pt",
                         help="path to saved weights")
     return parser.parse_args()
 
@@ -82,9 +82,10 @@ def run_evaluation(net, dataset, device):
 
             # show image
             pred_kps_hm = pred_kps_hm.detach().cpu().numpy()
-            img = img * 255
+            # img = img * 255
             img = img.detach().cpu()
-            img = img.permute(1, 2, 0).numpy().astype(np.uint8)
+            img = img.permute(1, 2, 0).numpy()
+            img = reverse_mean_std_normalize(img).astype(np.uint8)
             img = plot_kps(img, gt_kps[0], pred_kps_hm[0], pred_kps_graph[0])
 
             gt_hm_np = visualize_hm(gt_hm)
@@ -110,7 +111,7 @@ def main(args):
         net.load_state_dict(torch.load(args.weights))
 
     net.eval()
-    keypoint_label_names = list(range(args.num_classes))
+    keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
     dataset = WFLWDataset(args.annotation,
                           args.images,
                           image_size=(args.image_size, args.image_size),
@@ -119,7 +120,8 @@ def main(args):
                           in_memory=args.in_memory,
                           crop_face_storing="temp/train",
                           radius=args.radius,
-                          normalize_func=mean_std_normalize
+                          normalize_func=mean_std_normalize,
+                          # force_square_shape=True
                           )
     run_evaluation(net, dataset, device)
 
