@@ -54,6 +54,7 @@ def parse_args():
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
     parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
     parser.add_argument("--multi_gpu", action="store_true")
+    parser.add_argument("--freeze_hm", action="store_true")
 
     # augmentation
     parser.add_argument("--augmentation", action="store_true")
@@ -176,7 +177,8 @@ def main(args):
     create_folder(args.saved_folder)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True, freeze_hm_model=True)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True,
+                        freeze_hm_model=args.freeze_hm)
     net.hm_model.load_state_dict(torch.load("saved_models/hrnetv2_pretrained/HR18-WFLW.pth"))
     net.to(device)
 
