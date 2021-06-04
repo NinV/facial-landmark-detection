@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
     parser.add_argument("--radius", type=int, default=8)
     parser.add_argument("--image_size", default=256, type=int)
+    parser.add_argument("--show", action="store_true")
 
     # save config
     parser.add_argument("-s", "--weights", default="saved_models/graph_base_line/frosty-spaceship-175-epoch_19.pt",
@@ -55,7 +56,8 @@ def visualize_hm(hm):
 def run_evaluation(net, dataset, device):
     net.eval()
     running_hm_loss = 0
-    running_nme = 0
+    running_nme_hm = 0
+    running_nme_graph = 0
     with torch.no_grad():
         net.eval()
         for i, data in tqdm(enumerate(dataset), total=len(dataset)):
@@ -77,28 +79,31 @@ def run_evaluation(net, dataset, device):
             meta = {'pts': torch.tensor(gt_kps[:, :, :2])}
             nme_hm = np.sum(compute_nme(pred_kps_hm[:, :, :2], meta), keepdims=False)
             nme_graph = np.sum(compute_nme(pred_kps_graph, meta), keepdims=False)
-            running_nme += nme_graph
+            running_nme_graph += nme_graph
+            running_nme_hm += nme_hm
             # print(nme_hm, nme_graph)
 
             # show image
-            pred_kps_hm = pred_kps_hm.detach().cpu().numpy()
-            # img = img * 255
-            img = img.detach().cpu()
-            img = img.permute(1, 2, 0).numpy()
-            img = reverse_mean_std_normalize(img).astype(np.uint8)
-            img = plot_kps(img, gt_kps[0], pred_kps_hm[0], pred_kps_graph[0])
+            if args.show:
+                pred_kps_hm = pred_kps_hm.detach().cpu().numpy()
+                img = img.detach().cpu()
+                img = img.permute(1, 2, 0).numpy()
+                img = reverse_mean_std_normalize(img).astype(np.uint8)
+                img = plot_kps(img, gt_kps[0], pred_kps_hm[0], pred_kps_graph[0])
 
-            gt_hm_np = visualize_hm(gt_hm)
-            pred_hm_np = visualize_hm(pred_hm_tensor[0])
+                gt_hm_np = visualize_hm(gt_hm)
+                pred_hm_np = visualize_hm(pred_hm_tensor[0])
 
-            cv2.imshow("img", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-            cv2.imshow("gt_hm", gt_hm_np)
-            cv2.imshow("pred_hm", pred_hm_np)
-            k = cv2.waitKey(0)
-            if k == ord("q"):
-                break
-        print(running_nme / len(dataset))
-        return running_nme / len(dataset)
+                cv2.imshow("img", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                cv2.imshow("gt_hm", gt_hm_np)
+                cv2.imshow("pred_hm", pred_hm_np)
+                k = cv2.waitKey(0)
+                if k == ord("q"):
+                    break
+        running_nme_graph /= len(dataset)
+        running_nme_hm /= len(dataset)
+        print("NME (hm): {}\nNME (graph): {}".format(running_nme_hm, running_nme_graph))
+        return running_nme_graph, running_nme_hm
 
 
 def main(args):
@@ -121,7 +126,7 @@ def main(args):
                           crop_face_storing="temp/train",
                           radius=args.radius,
                           normalize_func=mean_std_normalize,
-                          # force_square_shape=True
+                          force_square_shape=True
                           )
     run_evaluation(net, dataset, device)
 
