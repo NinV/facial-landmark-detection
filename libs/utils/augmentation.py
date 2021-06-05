@@ -3,11 +3,47 @@ import numpy as np
 import cv2
 
 
+MATCHED_PARTS = {
+    "300W": ([1, 17], [2, 16], [3, 15], [4, 14], [5, 13], [6, 12], [7, 11], [8, 10],
+             [18, 27], [19, 26], [20, 25], [21, 24], [22, 23],
+             [32, 36], [33, 35],
+             [37, 46], [38, 45], [39, 44], [40, 43], [41, 48], [42, 47],
+             [49, 55], [50, 54], [51, 53], [62, 64], [61, 65], [68, 66], [59, 57], [60, 56]),
+    "AFLW": ([1, 6], [2, 5], [3, 4],
+             [7, 12], [8, 11], [9, 10],
+             [13, 15],
+             [16, 18]),
+    "COFW": ([1, 2], [5, 7], [3, 4], [6, 8], [9, 10], [11, 12], [13, 15], [17, 18], [14, 16], [19, 20], [23, 24]),
+    "WFLW": ([0, 32], [1, 31], [2, 30], [3, 29], [4, 28], [5, 27], [6, 26], [7, 25], [8, 24], [9, 23], [10, 22],
+             [11, 21], [12, 20], [13, 19], [14, 18], [15, 17],  # check
+             [33, 46], [34, 45], [35, 44], [36, 43], [37, 42], [38, 50], [39, 49], [40, 48], [41, 47],  # elbrow
+             [60, 72], [61, 71], [62, 70], [63, 69], [64, 68], [65, 75], [66, 74], [67, 73],
+             [55, 59], [56, 58],
+             [76, 82], [77, 81], [78, 80], [87, 83], [86, 84],
+             [88, 92], [89, 91], [95, 93], [96, 97])}
+
+num_classes = {"300W": 68, "AFLW": 19, "COFW": 29, "WFLW": 98}
+
+
+class HorizontalFlip:
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def get_transformation_matrix(img_size):
+        iw, ih = img_size
+        T = np.array([[-1, 0, iw],
+                      [0, 1, 0],
+                      [0, 0, 1]])
+        return T
+
+
 class SequentialTransform:
     def __init__(self, geometric_transforms, geometric_transform_prob,
                  color_distortions, color_distortions_prob, out_size,
                  shuffle=True, color_mode='bgr', interpolation=cv2.INTER_AREA,
-                 border_mode=cv2.BORDER_CONSTANT, border_value=(114, 114, 114)):
+                 border_mode=cv2.BORDER_CONSTANT, border_value=(114, 114, 114),
+                 flip_point_pairs="WFLW"):
         self.geometric_transforms = geometric_transforms
         self.geometric_transform_prob = geometric_transform_prob
         self.color_distortions = color_distortions
@@ -20,6 +56,23 @@ class SequentialTransform:
         self.border_mode = border_mode
         self.border_value = border_value
 
+        if flip_point_pairs=="WFLW":
+            self.flip_matrix = np.identity(num_classes["WFLW"])
+            for i, j in MATCHED_PARTS["WFLW"]:
+                self.flip_matrix[i, i] = 0
+                self.flip_matrix[j, j] = 0
+                self.flip_matrix[i, j] = 1
+                self.flip_matrix[j, i] = 1
+
+        elif flip_point_pairs in ("300W", "AFLW", "COFW"):
+            self.flip_matrix = np.identity(num_classes[flip_point_pairs])
+            for i, j in MATCHED_PARTS[flip_point_pairs]:
+                self.flip_matrix[i-1, i-1] = 0
+                self.flip_matrix[j-1, j-1] = 0
+                self.flip_matrix[i-1, j-1] = 1
+                self.flip_matrix[j-1, i-1] = 1
+        self.flip_point = False
+
     def _get_transformation_matrix(self, img_size):
         if self.shuffle:
             temp = list(zip(self.geometric_transforms, self.geometric_transform_prob))
@@ -29,9 +82,10 @@ class SequentialTransform:
         w, h = img_size
         T = np.identity(3)
         for transform, prob in zip(self.geometric_transforms, self.geometric_transform_prob):
-
             if random.random() < prob:
                 T = np.matmul(transform.get_transformation_matrix((w, h)), T)
+                if isinstance(transform, HorizontalFlip):
+                    self.flip_point = True
         return T
 
     def transform(self, image: np.ndarray, points=None):
@@ -53,6 +107,10 @@ class SequentialTransform:
                 points = np.hstack((points, np.ones((nums, 1), dtype=np.float)))
             points = np.matmul(T, points.T).T
             points = points[:, :2]
+
+        if self.flip_point:
+            points = np.matmul(self.flip_matrix, points)
+            self.flip_point = False
 
         for color_distortion, prob in zip(self.color_distortions, self.color_distortions_prob):
             if random.random() < prob:
@@ -157,7 +215,7 @@ class RandomScalingAndRotation:
 
     def get_transformation_matrix(self, img_size):
         iw, ih = img_size
-        center = iw/2, ih/2
+        center = iw / 2, ih / 2
         angle = random.uniform(*self.angle_range)
         scale = random.uniform(*self.scale_range)
 
