@@ -14,7 +14,7 @@ from libs.models.networks.models import LandmarkModel
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
-from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion
+from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion, HorizontalFlip
 from libs.utils.image import mean_std_normalize
 from model_config import heatmap_model_config, graph_model_config
 
@@ -80,8 +80,10 @@ def create_folder(path):
 def get_augmentation(args):
     translation = RandomTranslation(args.tx, args.ty)
     rotation_and_scaling = RandomScalingAndRotation(args.rot, args.scale)
+    hflip = HorizontalFlip()
     color_distortion = ColorDistortion(hue=args.hue, saturation=args.saturation, exposure=args.exposure)
-    transform = SequentialTransform([translation, rotation_and_scaling], [args.t_prob, args.rot_and_scale_prob],
+    transform = SequentialTransform([translation, rotation_and_scaling, hflip],
+                                    [args.t_prob, args.rot_and_scale_prob, 0.5],
                                     [color_distortion], [args.color],
                                     (args.image_size, args.image_size))
     return transform
