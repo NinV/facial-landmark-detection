@@ -6,6 +6,7 @@ import numpy as np
 import cv2
 import torch
 from easydict import EasyDict as edict
+from scipy.integrate import simps
 from tqdm import tqdm
 import pandas as pd
 
@@ -33,23 +34,14 @@ def parse_args():
     return parser.parse_args()
 
 
-def plot_kps(img, gt, pred_hm, pred_graph):
-    for (x, y, classId) in gt:
-        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 255, 0])
-
-    for (x, y, _) in pred_hm:
-        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 0, 255])
-
-    for (x, y) in pred_graph:
-        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[255, 0, 0])
-
-    return img
-
-
-def visualize_hm(hm):
-    hm = hm.permute(1, 2, 0).cpu().numpy()
-    hm = np.max(hm, axis=-1)
-    return (hm * 255).astype(np.uint8)
+def AUCError(errors, failureThreshold=0.1, step=0.0001):
+    nErrors = len(errors)
+    xAxis = list(np.arange(0., failureThreshold + step, step))
+    ced = [float(np.count_nonzero([errors <= x])) / nErrors for x in xAxis]
+    AUC = simps(ced, x=xAxis) / failureThreshold
+    failureRate = 1. - ced[-1]
+    print("AUC @ {0}: {1}".format(failureThreshold, AUC))
+    print("Failure rate: {0}".format(failureRate))
 
 
 def run_evaluation(net, dataset, device):
@@ -58,6 +50,8 @@ def run_evaluation(net, dataset, device):
     metrics_graph = {"test": [0, 0, 0], "pose": [0, 0, 0], "expression": [0, 0, 0],
                          "illumination": [0, 0, 0], "make-up": [0, 0, 0], "occlusion": [0, 0, 0], "blur": [0, 0, 0]}
     subset_names = ["pose", "expression", "illumination", "make-up", "occlusion", "blur"]
+    errors = {"test": [], "pose": [], "expression": [],
+              "illumination": [], "make-up": [], "occlusion": [], "blur": []}
 
     csv_headers = []
     for i in range(98):
@@ -87,6 +81,7 @@ def run_evaluation(net, dataset, device):
 
             metrics_graph["test"][0] += nme_graph
             metrics_graph["test"][2] += 1
+            errors["test"].append(nme_graph)
             if nme_graph > 0.1:
                 metrics_graph["test"][1] += 1
 
@@ -95,13 +90,14 @@ def run_evaluation(net, dataset, device):
                 if value == 1:
                     metrics_graph[subset_names[j]][0] += nme_graph
                     metrics_graph[subset_names[j]][2] += 1
+                    errors[subset_names[j]].append(nme_graph)
                     if nme_graph > 0.1:
                         metrics_graph[subset_names[j]][1] += 1
 
         for subset, (total_nme, num_failures, count) in metrics_graph.items():
-            # print("NME - {}: {} on {} samples".format(subset, value/count, count))
-            print("Subset {}, num_samples: {}\nNME: {}, FR0.1: {}\n".format(subset, count, total_nme/count,
-                                                                            num_failures/count))
+            print("Subset {}, num_samples: {}\nNME: {}".format(subset, count, total_nme / count))
+            AUCError(errors[subset])
+            print("-----------------")
 
         return metrics_graph
 

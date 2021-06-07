@@ -39,7 +39,7 @@ def plot_kps(img, gt, pred_hm, pred_graph):
         cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 255, 0])
 
     for (x, y, _) in pred_hm:
-        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 0, 255])
+        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[150, 150, 255])
 
     for (x, y) in pred_graph:
         cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[255, 0, 0])
@@ -47,9 +47,11 @@ def plot_kps(img, gt, pred_hm, pred_graph):
     return img
 
 
-def visualize_hm(hm):
+def visualize_hm(hm, merge=True):
     hm = hm.permute(1, 2, 0).cpu().numpy()
-    hm = np.max(hm, axis=-1)
+    hm[hm < 0] = 0
+    if merge:
+        hm = np.max(hm, axis=-1)
     return (hm * 255).astype(np.uint8)
 
 
@@ -66,7 +68,6 @@ def run_evaluation(net, dataset, device):
             # gt_hm_tensor = torch.unsqueeze(gt_hm, 0).to(device, dtype=torch.float)
             gt_kps = np.expand_dims(gt_kps, axis=0) * net.hm_model.downsampling_factor
 
-            # pred_hm_tensor = net(img_tensor)
             pred_hm_tensor, pred_kps_graph = net(img_tensor)
             pred_kps_graph = pred_kps_graph.cpu()
             batch_size, num_classes, h, w = pred_hm_tensor.size()
@@ -91,11 +92,27 @@ def run_evaluation(net, dataset, device):
                 img = reverse_mean_std_normalize(img).astype(np.uint8)
                 img = plot_kps(img, gt_kps[0], pred_kps_hm[0], pred_kps_graph[0])
 
-                gt_hm_np = visualize_hm(gt_hm)
+                # merge hm and visualize
                 pred_hm_np = visualize_hm(pred_hm_tensor[0])
+                pred_hm_np = cv2.cvtColor(pred_hm_np, cv2.COLOR_GRAY2RGB)
+                h, w = img.shape[:2]
+                pred_hm_np = cv2.resize(pred_hm_np, (w, h), interpolation=cv2.INTER_NEAREST)
+                pred_hm_np = plot_kps(pred_hm_np, gt_kps[0], pred_kps_hm[0], pred_kps_graph[0])
+                pred_hm_np = cv2.cvtColor(pred_hm_np, cv2.COLOR_RGB2BGR)
+
+                # visual hm per landmark
+                pred_hm_per_lm = visualize_hm(pred_hm_tensor[0], merge=False)
+                for i in range(num_classes):
+                    hm = pred_hm_per_lm[:, :, i]
+                    hm = cv2.cvtColor(hm, cv2.COLOR_GRAY2RGB)
+                    hm = cv2.resize(hm, (w, h), interpolation=cv2.INTER_NEAREST)
+                    hm = plot_kps(hm, gt_kps[0, i].reshape(1, -1),
+                                  pred_kps_hm[0, i].reshape(1, -1),
+                                  pred_kps_graph[0, i].reshape(1, -1))
+                    hm = cv2.cvtColor(hm, cv2.COLOR_RGB2BGR)
+                    cv2.imwrite("tmp_evaluate/{}.png".format(i), hm)
 
                 cv2.imshow("img", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-                cv2.imshow("gt_hm", gt_hm_np)
                 cv2.imshow("pred_hm", pred_hm_np)
                 k = cv2.waitKey(0)
                 if k == ord("q"):
