@@ -12,6 +12,7 @@ import wandb
 
 from libs.models.networks.models import LandmarkModel
 from libs.dataset.wflw_dataset import WFLWDataset
+from libs.dataset.cofw_dataset import COFWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
 from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion, HorizontalFlip
@@ -25,6 +26,9 @@ def parse_args():
     # weights config
     parser.add_argument("--weights", default="", help="load weights")
     parser.add_argument("--model", default="full", help="specific loaded model type in: ['backbone', 'full'] ")
+
+    # config dataset train
+    parser.add_argument("--dataset", default="wflw", help="specific dataset: ['wflw', 'cofw'] ")
 
     # dataset
     parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
@@ -181,7 +185,7 @@ def main(args):
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True,
                         freeze_hm_model=args.freeze_hm)
-    net.hm_model.load_state_dict(torch.load("saved_models/hrnetv2_pretrained/HR18-WFLW.pth"))
+    net.hm_model.load_state_dict(torch.load("HR18-COFW.pth"))
     net.to(device)
 
     if args.weights:
@@ -201,19 +205,30 @@ def main(args):
         transform = get_augmentation(args)
     else:
         transform = None
-
-    dataset = WFLWDataset(args.annotation,
-                          args.images,
-                          image_size=(args.image_size, args.image_size),
-                          keypoint_label_names=keypoint_label_names,
-                          downsampling_factor=net.hm_model.downsampling_factor,
-                          in_memory=args.in_memory,
-                          crop_face_storing="temp/train",
-                          radius=args.radius,
-                          augmentation=transform,
-                          normalize_func=mean_std_normalize,
-                          hrnet_box=args.processed_box)
-
+    if args.dataset == 'wflw':
+        dataset = WFLWDataset(args.annotation,
+                            args.images,
+                            image_size=(args.image_size, args.image_size),
+                            keypoint_label_names=keypoint_label_names,
+                            downsampling_factor=net.hm_model.downsampling_factor,
+                            in_memory=args.in_memory,
+                            crop_face_storing="temp/train",
+                            radius=args.radius,
+                            augmentation=transform,
+                            normalize_func=mean_std_normalize,
+                            hrnet_box=args.processed_box)
+    if args.dataset == 'cofw':
+        dataset = COFWDataset(args.annotation,
+                            args.images,
+                            image_size=(args.image_size, args.image_size),
+                            keypoint_label_names=keypoint_label_names,
+                            downsampling_factor=net.hm_model.downsampling_factor,
+                            in_memory=None,
+                            crop_face_storing=None,
+                            radius=args.radius,
+                            augmentation=transform,
+                            normalize_func=mean_std_normalize,
+                            hrnet_box=None)
     if args.test_annotation:
         training_set = dataset
         dataset_type = type(training_set)
