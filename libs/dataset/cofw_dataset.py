@@ -74,7 +74,7 @@ class COFWDataset(BaseDataset):
     def __getitem__(self, idx):
         if idx >= len(self):
             raise IndexError
-        img = load_image(images[idx]).copy()
+        img = load_image(self.images[idx]).copy()
 
         kps_tmp = self.annotations[idx]  # always using a deep copy to prevent modification on original data
         kp_classes = np.arange(self._num_classes).reshape(self._num_classes, 1)
