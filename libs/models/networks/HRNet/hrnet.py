@@ -507,7 +507,7 @@ def _get_face_alignment_net(config, **kwargs):
     return model
 
 
-def get_face_alignment_net(yaml_file='face_alignment_cofw_hrnet_w18.yaml'):
+def get_face_alignment_net(yaml_file='face_alignment_300w_hrnet_w18.yaml'):
     from argparse import Namespace
     from .config import config, update_config
     import pathlib

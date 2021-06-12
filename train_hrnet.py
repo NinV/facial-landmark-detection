@@ -13,6 +13,7 @@ import wandb
 from libs.models.networks.models import LandmarkModel
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.dataset.cofw_dataset import COFWDataset
+from libs.dataset.w300_dataset import W300_Dataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
 from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion, HorizontalFlip
@@ -28,7 +29,7 @@ def parse_args():
     parser.add_argument("--model", default="full", help="specific loaded model type in: ['backbone', 'full'] ")
 
     # config dataset train
-    parser.add_argument("--dataset", default="wflw", help="specific dataset: ['wflw', 'cofw'] ")
+    parser.add_argument("--dataset", default="wflw", help="specific dataset: ['wflw', '300W_COFW'] ")
 
     # dataset
     parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
@@ -185,7 +186,7 @@ def main(args):
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True,
                         freeze_hm_model=args.freeze_hm)
-    net.hm_model.load_state_dict(torch.load("HR18-COFW.pth"))
+    # net.hm_model.load_state_dict(torch.load("HR18-300W.pth"))
     net.to(device)
 
     if args.weights:
@@ -217,19 +218,31 @@ def main(args):
                             augmentation=transform,
                             normalize_func=mean_std_normalize,
                             hrnet_box=args.processed_box)
-    if args.dataset == 'cofw':
-        dataset = COFWDataset(args.annotation,
+    if args.dataset == '300W_COFW':
+        dataset = W300_Dataset(args.annotation,
                             args.images,
                             image_size=(args.image_size, args.image_size),
                             keypoint_label_names=keypoint_label_names,
                             downsampling_factor=net.hm_model.downsampling_factor,
                             in_memory=None,
-                            crop_face_storing=None,
+                            crop_face_storing='temp/train',
                             radius=args.radius,
                             augmentation=transform,
                             normalize_func=mean_std_normalize,
-                            hrnet_box=None)
-    if args.test_annotation:
+                            hrnet_box=True)
+
+
+        test_set = COFWDataset(args.test_annotation,
+                        args.test_images,
+                        image_size=(args.image_size, args.image_size),
+                        keypoint_label_names=keypoint_label_names,
+                        downsampling_factor=net.hm_model.downsampling_factor,
+                        in_memory=args.in_memory,
+                        crop_face_storing="temp/test",
+                        radius=args.radius,
+                        normalize_func=mean_std_normalize,
+                        hrnet_box=True)
+    if args.test_annotation and args.dataset != '300W_COFW':
         training_set = dataset
         dataset_type = type(training_set)
         test_set = dataset_type(args.test_annotation,
