@@ -14,7 +14,7 @@ from libs.models.networks.models import LandmarkModel
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
-from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion
+from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion, HorizontalFlip
 from libs.utils.image import mean_std_normalize
 from model_config import heatmap_model_config, graph_model_config
 
@@ -37,6 +37,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="random seed for train-test split")
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
     parser.add_argument("--image_size", default=512, type=int)
+    parser.add_argument("--processed_box", action="store_true",
+                        help="process boundbox so that all landmarks are visible")
 
     # save config
     parser.add_argument("-s", "--saved_folder", default="saved_models", help="folder for saving model")
@@ -52,6 +54,7 @@ def parse_args():
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
     parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
     parser.add_argument("--multi_gpu", action="store_true")
+    parser.add_argument("--freeze_hm", action="store_true")
 
     # augmentation
     parser.add_argument("--augmentation", action="store_true")
@@ -77,8 +80,10 @@ def create_folder(path):
 def get_augmentation(args):
     translation = RandomTranslation(args.tx, args.ty)
     rotation_and_scaling = RandomScalingAndRotation(args.rot, args.scale)
+    hflip = HorizontalFlip()
     color_distortion = ColorDistortion(hue=args.hue, saturation=args.saturation, exposure=args.exposure)
-    transform = SequentialTransform([translation, rotation_and_scaling], [args.t_prob, args.rot_and_scale_prob],
+    transform = SequentialTransform([translation, rotation_and_scaling, hflip],
+                                    [args.t_prob, args.rot_and_scale_prob, 0.5],
                                     [color_distortion], [args.color],
                                     (args.image_size, args.image_size))
     return transform
@@ -174,7 +179,8 @@ def main(args):
     create_folder(args.saved_folder)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True, freeze_hm_model=True)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True,
+                        freeze_hm_model=args.freeze_hm)
     net.hm_model.load_state_dict(torch.load("saved_models/hrnetv2_pretrained/HR18-WFLW.pth"))
     net.to(device)
 
@@ -205,7 +211,8 @@ def main(args):
                           crop_face_storing="temp/train",
                           radius=args.radius,
                           augmentation=transform,
-                          normalize_func=mean_std_normalize)
+                          normalize_func=mean_std_normalize,
+                          hrnet_box=args.processed_box)
 
     if args.test_annotation:
         training_set = dataset
@@ -218,7 +225,8 @@ def main(args):
                                 in_memory=args.in_memory,
                                 crop_face_storing="temp/test",
                                 radius=args.radius,
-                                normalize_func=mean_std_normalize)
+                                normalize_func=mean_std_normalize,
+                                hrnet_box=args.processed_box)
     else:
         num_training = int(len(dataset) * args.split)
         num_testing = len(dataset) - num_training

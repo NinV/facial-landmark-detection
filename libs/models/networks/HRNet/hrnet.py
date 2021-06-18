@@ -493,8 +493,8 @@ class HighResolutionNet(nn.Module):
                     # https://discuss.pytorch.org/t/get-indices-of-the-max-of-a-2d-tensor/82150
                     indices_y, indices_x = torch.nonzero(hm_reduce[i, c] == torch.max(hm_reduce[i, c]), as_tuple=True)
                     indices_x, indices_y = indices_x[0], indices_y[0]  # ensure only there only one landmark per class
-                    if hm_reduce[i, c, indices_y, indices_x] > confidence_threshold:
-                        kps[i].append([indices_x, indices_y, c])
+                    # if hm_reduce[i, c, indices_y, indices_x] > confidence_threshold:
+                    kps[i].append([indices_x, indices_y, c])
         return torch.tensor(kps)  # TODO: bug arise if some keypoints are removed due to low confidence
 
 

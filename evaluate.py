@@ -6,7 +6,9 @@ import numpy as np
 import cv2
 import torch
 from easydict import EasyDict as edict
+from scipy.integrate import simps
 from tqdm import tqdm
+import pandas as pd
 
 from libs.dataset.wflw_dataset import WFLWDataset
 from libs.models.losses import heatmap_loss
@@ -22,9 +24,7 @@ def parse_args():
     # dataset
     parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
     parser.add_argument("--annotation", required=True, help="Annotation file for training")
-    parser.add_argument("--format", default="WFLW", help="dataset format: 'WFLW', 'COCO'")
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
-    parser.add_argument("--radius", type=int, default=8)
     parser.add_argument("--image_size", default=256, type=int)
     parser.add_argument("--show", action="store_true")
 
@@ -34,36 +34,39 @@ def parse_args():
     return parser.parse_args()
 
 
-def plot_kps(img, gt, pred_hm, pred_graph):
-    for (x, y, classId) in gt:
-        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 255, 0])
-
-    for (x, y, _) in pred_hm:
-        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[0, 0, 255])
-
-    for (x, y) in pred_graph:
-        cv2.circle(img, (int(x + 0.5), int(y + 0.5)), radius=2, thickness=-1, color=[255, 0, 0])
-
-    return img
-
-
-def visualize_hm(hm):
-    hm = hm.permute(1, 2, 0).cpu().numpy()
-    hm = np.max(hm, axis=-1)
-    return (hm * 255).astype(np.uint8)
+def AUCError(errors, failureThreshold=0.1, step=0.0001):
+    nErrors = len(errors)
+    xAxis = list(np.arange(0., failureThreshold + step, step))
+    ced = [float(np.count_nonzero([errors <= x])) / nErrors for x in xAxis]
+    AUC = simps(ced, x=xAxis) / failureThreshold
+    failureRate = 1. - ced[-1]
+    print("AUC @ {0}: {1}".format(failureThreshold, AUC))
+    print("Failure rate: {0}".format(failureRate))
 
 
 def run_evaluation(net, dataset, device):
     net.eval()
-    running_hm_loss = 0
-    running_nme_hm = 0
-    running_nme_graph = 0
+    # running_nme_hm = 0
+    metrics_graph = {"test": [0, 0, 0], "pose": [0, 0, 0], "expression": [0, 0, 0],
+                         "illumination": [0, 0, 0], "make-up": [0, 0, 0], "occlusion": [0, 0, 0], "blur": [0, 0, 0]}
+    subset_names = ["pose", "expression", "illumination", "make-up", "occlusion", "blur"]
+    errors = {"test": [], "pose": [], "expression": [],
+              "illumination": [], "make-up": [], "occlusion": [], "blur": []}
+
+    csv_headers = []
+    for i in range(98):
+        csv_headers.extend(("x{}".format(i), "y{}".format(i)))
+    csv_headers.extend(("x_min_rect", "y_min_rect", "x_max_rect", "y_max_rect"))
+    csv_headers.extend(("pose", "expression", "illumination", "make-up", "occlusion", "blur"))
+    csv_headers.append("image_name")
+    df = pd.read_csv(args.annotation, names=csv_headers, sep=" ")
+    subset_type = df.loc[:, ["pose", "expression", "illumination", "make-up", "occlusion", "blur"]]
+
     with torch.no_grad():
         net.eval()
         for i, data in tqdm(enumerate(dataset), total=len(dataset)):
-            img, gt_kps, gt_hm, _ = data
+            img, gt_kps, _, _ = data
             img_tensor = torch.unsqueeze(img, 0).to(device, dtype=torch.float)
-            # gt_hm_tensor = torch.unsqueeze(gt_hm, 0).to(device, dtype=torch.float)
             gt_kps = np.expand_dims(gt_kps, axis=0) * net.hm_model.downsampling_factor
 
             # pred_hm_tensor = net(img_tensor)
@@ -73,37 +76,30 @@ def run_evaluation(net, dataset, device):
             hm_size = torch.tensor([h, w])
             pred_kps_graph *= (hm_size * net.hm_model.downsampling_factor)
 
-            # hm_loss = heatmap_loss(pred_hm_tensor, gt_hm_tensor)
-            pred_kps_hm = net.hm_model.decode_heatmap(pred_hm_tensor, confidence_threshold=0.0) * net.hm_model.downsampling_factor
-
             meta = {'pts': torch.tensor(gt_kps[:, :, :2])}
-            nme_hm = np.sum(compute_nme(pred_kps_hm[:, :, :2], meta), keepdims=False)
             nme_graph = np.sum(compute_nme(pred_kps_graph, meta), keepdims=False)
-            running_nme_graph += nme_graph
-            running_nme_hm += nme_hm
-            # print(nme_hm, nme_graph)
 
-            # show image
-            if args.show:
-                pred_kps_hm = pred_kps_hm.detach().cpu().numpy()
-                img = img.detach().cpu()
-                img = img.permute(1, 2, 0).numpy()
-                img = reverse_mean_std_normalize(img).astype(np.uint8)
-                img = plot_kps(img, gt_kps[0], pred_kps_hm[0], pred_kps_graph[0])
+            metrics_graph["test"][0] += nme_graph
+            metrics_graph["test"][2] += 1
+            errors["test"].append(nme_graph)
+            if nme_graph > 0.1:
+                metrics_graph["test"][1] += 1
 
-                gt_hm_np = visualize_hm(gt_hm)
-                pred_hm_np = visualize_hm(pred_hm_tensor[0])
+            category = subset_type.iloc[i].to_list()
+            for j, value in enumerate(category):
+                if value == 1:
+                    metrics_graph[subset_names[j]][0] += nme_graph
+                    metrics_graph[subset_names[j]][2] += 1
+                    errors[subset_names[j]].append(nme_graph)
+                    if nme_graph > 0.1:
+                        metrics_graph[subset_names[j]][1] += 1
 
-                cv2.imshow("img", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-                cv2.imshow("gt_hm", gt_hm_np)
-                cv2.imshow("pred_hm", pred_hm_np)
-                k = cv2.waitKey(0)
-                if k == ord("q"):
-                    break
-        running_nme_graph /= len(dataset)
-        running_nme_hm /= len(dataset)
-        print("NME (hm): {}\nNME (graph): {}".format(running_nme_hm, running_nme_graph))
-        return running_nme_graph, running_nme_hm
+        for subset, (total_nme, num_failures, count) in metrics_graph.items():
+            print("Subset {}, num_samples: {}\nNME: {}".format(subset, count, total_nme / count))
+            AUCError(errors[subset])
+            print("-----------------")
+
+        return metrics_graph
 
 
 def main(args):
@@ -124,9 +120,9 @@ def main(args):
                           downsampling_factor=net.hm_model.downsampling_factor,
                           in_memory=args.in_memory,
                           crop_face_storing="temp/train",
-                          radius=args.radius,
+                          radius=2,
                           normalize_func=mean_std_normalize,
-                          force_square_shape=True
+                          hrnet_box=True
                           )
     run_evaluation(net, dataset, device)
 
