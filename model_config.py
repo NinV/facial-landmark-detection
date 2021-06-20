@@ -12,7 +12,7 @@ graph_model_config = {"num_classes": 98,
                       "visual_feature_dim": 270,        # HRNet
                       "visual_hidden_sizes": [512, 128, 32],
                       "visual_embedding_size": 8,
-                      "GCN_dims": [8, 4],
+                      "GCN_dims": [64, 16],
                       "self_connection": False,
                       "graph_norm": "softmax",
                       # "graph_norm": "mean"

@@ -19,40 +19,23 @@ class W300_Dataset(BaseDataset):
         self.radius = radius
         self.crop_face_storing = crop_face_storing
         self.hrnet_box = hrnet_box
-        super(W300_Dataset, self).__init__(*args, **kwargs) 
-        
-
-
+        super(W300_Dataset, self).__init__(*args, **kwargs)
 
     def _load_images(self):
-        """
-        coordinates of 68 landmarks (68) + coordinates of upper left corner and lower right corner of detection
-        rectangle (4) + attributes annotations (6) + image name
-        (196) x0 y0 ... x97 y97
-        (6) pose expression illumination make-up occlusion blur
-        (1) image_name
-        """
-        self.annotation_files = glob.glob(str(self.image_folder)+'/*/*.pts')
+        # self.annotation_files = glob.glob(str(self.image_folder)+'/*/*.pts')
+        # self.annotation_files = []
+        image_files = glob.glob(str(self.image_folder)+'/**/*.[jpg][png]*')
         if not self.in_memory:
             self.temp_images_folder = pathlib.Path(self.crop_face_storing)
             self.temp_images_folder.mkdir(parents=True, exist_ok=True)
 
-        csv_headers = []
-        for i in range(self._num_classes):
-            csv_headers.extend(("x{}".format(i), "y{}".format(i)))
-        # csv_headers = [("x{}".format(i), "y{}".format(i)) for i in range(98)]
-        # csv_headers.extend(("x_min_rect", "y_min_rect", "x_max_rect", "y_max_rect"))
-        # csv_headers.extend(("pose", "expression", "illumination", "make-up", "occlusion", "blur"))
-        csv_headers.append("image_name")
-
-        # df = pd.read_csv(self.annotation_file, names=csv_headers, sep=" ")
-
         print("Loading dataset")
         self.annotations = {}
-        for i, (filename) in tqdm(enumerate(self.annotation_files),total=len(self.annotation_files)):
-            img = load_image(filename.replace('pts','png'))
+        for i, (filename) in tqdm(enumerate(image_files), total=len(image_files)):
+            # img = load_image(filename.replace('pts','png'))
+            img = load_image(filename)
             h, w = img.shape[:2]
-            _keypoints = np.loadtxt(filename, comments=("version:", "n_points:", "{", "}"))
+            _keypoints = np.loadtxt(filename.split(".")[0] + ".pts", comments=("version:", "n_points:", "{", "}"))
 
             if self.hrnet_box:
                 lm_data = np.array(_keypoints.flatten()[:self._num_classes*2]).reshape(-1, 2)
