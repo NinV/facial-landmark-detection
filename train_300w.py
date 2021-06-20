@@ -48,6 +48,7 @@ def parse_args():
     parser.add_argument("--gcn_lr", type=float, default=10e-3, help="gcn learning rate")
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
     parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
+    parser.add_argument("--heatmap_loss", default="Focal", help="'Focal' or 'MSE'")
     parser.add_argument("--multi_gpu", action="store_true")
     parser.add_argument("--freeze_hm", action="store_true")
 
@@ -100,8 +101,10 @@ def train_one_epoch(net, optimizer, loader, epoch, device, opt):
 
         # heatmap loss
         pred_hm, pred_kps = net(img)
-        hm_loss = heatmap_loss(pred_hm, gt_hm)
-        # hm_loss = torch.nn.MSELoss(reduction="mean")(pred_hm, gt_hm)
+        if opt.heatmap_loss == "Focal":
+            hm_loss = heatmap_loss(pred_hm, gt_hm)
+        else:
+            hm_loss = torch.nn.MSELoss(reduction="mean")(pred_hm, gt_hm)
 
         #  regression loss
         if opt.regression_loss == 'L1':
@@ -135,7 +138,10 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
             gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm, pred_kps_graph = net(img)
 
-            hm_loss = heatmap_loss(pred_hm, gt_hm)
+            if opt.heatmap_loss == "Focal":
+                hm_loss = heatmap_loss(pred_hm, gt_hm)
+            else:
+                hm_loss = torch.nn.MSELoss(reduction="mean")(pred_hm, gt_hm)
             running_hm_loss += (hm_loss.item() * len(img))
 
             #  regression loss
