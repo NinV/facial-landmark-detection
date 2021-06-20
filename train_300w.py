@@ -176,7 +176,7 @@ def main(args):
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True,
                         freeze_hm_model=args.freeze_hm, hrnet_config="face_alignment_300w_hrnet_w18.yaml")
-    # net.hm_model.load_state_dict(torch.load("HR18-300W.pth"))
+
     net.to(device)
 
     if args.weights:
@@ -188,6 +188,8 @@ def main(args):
             net.load_state_dict(torch.load(args.weights))
         else:
             raise ValueError("wrong model type")
+    else:
+        net.hm_model.load_state_dict(torch.load("saved_models/hrnetv2_pretrained/HR18-300W_processed.pth"))
 
     # data loader
     keypoint_label_names = list(range(68))
