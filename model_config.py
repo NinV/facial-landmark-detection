@@ -1,10 +1,10 @@
 heatmap_model_config = {"in_channels": 3,
-                       "num_classes": 98,
+                       "num_classes": 68,
                        "hg_dims": [[256, 256, 384], [384, 384, 512]],
                        "downsample": True
                        }
 
-graph_model_config = {"num_classes": 98,
+graph_model_config = {"num_classes": 68,
                       "embedding_hidden_sizes": [32],
                       "class_embedding_size": 1,
                       "edge_hidden_size": 4,
