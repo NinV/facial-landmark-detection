@@ -76,9 +76,9 @@ class COFWDataset(BaseDataset):
             raise IndexError
         img = load_image(self.images[idx]).copy()
 
-        kps_tmp = self.annotations[idx]  # always using a deep copy to prevent modification on original data
-        kp_classes = np.arange(self._num_classes).reshape(self._num_classes, 1)
-        kps = np.concatenate([kps_tmp, kp_classes], axis=-1)
+        kps = self.annotations[idx]  # always using a deep copy to prevent modification on original data
+#         kp_classes = np.arange(self._num_classes).reshape(self._num_classes, 1)
+#         kps = np.concatenate([kps_tmp, kp_classes], axis=-1)
         if self.resize_func is not None:
             img, kps, resize_params = self.resize_func(img, kps)  # resize image
             resize_params = torch.tensor(resize_params)
