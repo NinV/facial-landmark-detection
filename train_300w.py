@@ -16,7 +16,8 @@ from libs.dataset.cofw_dataset import COFWDataset
 from libs.dataset.w300_dataset import W300_Dataset
 from libs.models.losses import heatmap_loss
 from libs.utils.metrics import compute_nme
-from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion, HorizontalFlip
+from libs.utils.augmentation import SequentialTransform, RandomScalingAndRotation, RandomTranslation, ColorDistortion, \
+    HorizontalFlip
 from libs.utils.image import mean_std_normalize
 from model_config import heatmap_model_config, graph_model_config
 
@@ -28,22 +29,11 @@ def parse_args():
     parser.add_argument("--weights", default="", help="load weights")
     parser.add_argument("--model", default="full", help="specific loaded model type in: ['backbone', 'full'] ")
 
-    # config dataset train
-    parser.add_argument("--dataset", default="wflw", help="specific dataset: ['wflw', '300W_COFW'] ")
-
     # dataset
-    parser.add_argument("-i", "--images", required=True, help="Path to image folder for training")
     parser.add_argument("--annotation", required=True, help="Annotation file for training")
-    parser.add_argument("--test_images", default="",
-                        help="Path to image folder for testing. If not given, split from training set")
-    parser.add_argument("--test_annotation", default="",
-                        help="Annotation file for testing. If not given, split from training set")
-    parser.add_argument("--split", type=float, default=0.9, help="Train-Test split ratio")
     parser.add_argument("--seed", type=int, default=42, help="random seed for train-test split")
     parser.add_argument("--in_memory", action="store_true", help="Load all image on RAM")
-    parser.add_argument("--image_size", default=512, type=int)
-    parser.add_argument("--processed_box", action="store_true",
-                        help="process boundbox so that all landmarks are visible")
+    parser.add_argument("--image_size", default=256, type=int)
 
     # save config
     parser.add_argument("-s", "--saved_folder", default="saved_models", help="folder for saving model")
@@ -58,6 +48,7 @@ def parse_args():
     parser.add_argument("--gcn_lr", type=float, default=10e-3, help="gcn learning rate")
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
     parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
+    parser.add_argument("--heatmap_loss", default="Focal", help="'Focal' or 'MSE'")
     parser.add_argument("--multi_gpu", action="store_true")
     parser.add_argument("--freeze_hm", action="store_true")
 
@@ -110,8 +101,10 @@ def train_one_epoch(net, optimizer, loader, epoch, device, opt):
 
         # heatmap loss
         pred_hm, pred_kps = net(img)
-        hm_loss = heatmap_loss(pred_hm, gt_hm)
-        # hm_loss = torch.nn.MSELoss(reduction="mean")(pred_hm, gt_hm)
+        if opt.heatmap_loss == "Focal":
+            hm_loss = heatmap_loss(pred_hm, gt_hm)
+        else:
+            hm_loss = torch.nn.MSELoss(reduction="mean")(pred_hm, gt_hm)
 
         #  regression loss
         if opt.regression_loss == 'L1':
@@ -123,7 +116,7 @@ def train_one_epoch(net, optimizer, loader, epoch, device, opt):
         loss.backward()
         optimizer.step()
         print("batch {}/{}, heat map loss: {}, regression loss: {}".format(i + 1, len(loader),
-                                                                       hm_loss.item(), regression_loss.item()))
+                                                                           hm_loss.item(), regression_loss.item()))
         wandb.log({'train_hm_loss (step)': hm_loss.item(),
                    'train_regr_loss (step)': regression_loss.item(),
                    'epoch': epoch,
@@ -141,11 +134,14 @@ def run_evaluation(net, loader, epoch, device, opt, prefix='val'):
             img, gt_kps, gt_hm, _ = data
             img = img.to(device, dtype=torch.float)
             gt_hm = gt_hm.to(device, dtype=torch.float)
-            
+
             gt_kps = gt_kps.to(device, dtype=torch.float)
             pred_hm, pred_kps_graph = net(img)
 
-            hm_loss = heatmap_loss(pred_hm, gt_hm)
+            if opt.heatmap_loss == "Focal":
+                hm_loss = heatmap_loss(pred_hm, gt_hm)
+            else:
+                hm_loss = torch.nn.MSELoss(reduction="mean")(pred_hm, gt_hm)
             running_hm_loss += (hm_loss.item() * len(img))
 
             #  regression loss
@@ -185,8 +181,8 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True,
-                        freeze_hm_model=args.freeze_hm)
-    # net.hm_model.load_state_dict(torch.load("HR18-300W.pth"))
+                        freeze_hm_model=args.freeze_hm, hrnet_config="face_alignment_300w_hrnet_w18.yaml")
+
     net.to(device)
 
     if args.weights:
@@ -198,93 +194,73 @@ def main(args):
             net.load_state_dict(torch.load(args.weights))
         else:
             raise ValueError("wrong model type")
+    else:
+        net.hm_model.load_state_dict(torch.load("saved_models/hrnetv2_pretrained/HR18-300W_processed.pth"))
 
     # data loader
-    keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
+    keypoint_label_names = list(range(68))
 
     if args.augmentation:
         transform = get_augmentation(args)
     else:
         transform = None
-    if args.dataset == 'wflw':
-        dataset = WFLWDataset(args.annotation,
-                            args.images,
-                            image_size=(args.image_size, args.image_size),
-                            keypoint_label_names=keypoint_label_names,
-                            downsampling_factor=net.hm_model.downsampling_factor,
-                            in_memory=args.in_memory,
-                            crop_face_storing="temp/train",
-                            radius=args.radius,
-                            augmentation=transform,
-                            normalize_func=mean_std_normalize,
-                            hrnet_box=args.processed_box)
-    if args.dataset == '300W_COFW':
-        dataset = W300_Dataset(args.annotation,
-                            args.images,
-                            image_size=(args.image_size, args.image_size),
-                            keypoint_label_names=keypoint_label_names,
-                            downsampling_factor=net.hm_model.downsampling_factor,
-                            in_memory=None,
-                            crop_face_storing='temp/train',
-                            radius=args.radius,
-                            augmentation=transform,
-                            normalize_func=mean_std_normalize,
-                            hrnet_box=True)
 
-
-        test_set = COFWDataset(args.test_annotation,
-                        args.test_images,
-                        image_size=(args.image_size, args.image_size),
-                        keypoint_label_names=keypoint_label_names,
-                        downsampling_factor=net.hm_model.downsampling_factor,
-                        in_memory=args.in_memory,
-                        crop_face_storing="temp/test",
-                        radius=args.radius,
-                        normalize_func=mean_std_normalize,
-                        hrnet_box=True)
-    if args.test_annotation and args.dataset != '300W_COFW':
-        training_set = dataset
-        dataset_type = type(training_set)
-        test_set = dataset_type(args.test_annotation,
-                                args.test_images,
+    root_folder = pathlib.Path(args.annotation)
+    training_set = W300_Dataset(str(root_folder / "train"),
+                                str(root_folder / "train"),
                                 image_size=(args.image_size, args.image_size),
                                 keypoint_label_names=keypoint_label_names,
                                 downsampling_factor=net.hm_model.downsampling_factor,
-                                in_memory=args.in_memory,
-                                crop_face_storing="temp/test",
+                                in_memory=None,
+                                crop_face_storing='temp/train',
                                 radius=args.radius,
+                                augmentation=transform,
                                 normalize_func=mean_std_normalize,
-                                hrnet_box=args.processed_box)
-    else:
-        num_training = int(len(dataset) * args.split)
-        num_testing = len(dataset) - num_training
-        training_set, test_set = random_split(dataset, [num_training, num_testing],
-                                              generator=torch.Generator().manual_seed(args.seed))
+                                hrnet_box=True)
+
+    test_common = W300_Dataset(str(root_folder / "test_common"),
+                               str(root_folder / "test_common"),
+                               image_size=(args.image_size, args.image_size),
+                               keypoint_label_names=keypoint_label_names,
+                               downsampling_factor=net.hm_model.downsampling_factor,
+                               in_memory=args.in_memory,
+                               crop_face_storing="temp/test_common",
+                               radius=args.radius,
+                               normalize_func=mean_std_normalize,
+                               hrnet_box=True)
+
+    test_challenge = W300_Dataset(str(root_folder / "test_challenge"),
+                                  str(root_folder / "test_challenge"),
+                                  image_size=(args.image_size, args.image_size),
+                                  keypoint_label_names=keypoint_label_names,
+                                  downsampling_factor=net.hm_model.downsampling_factor,
+                                  in_memory=args.in_memory,
+                                  crop_face_storing="temp/test_challenge",
+                                  radius=args.radius,
+                                  normalize_func=mean_std_normalize,
+                                  hrnet_box=True)
 
     train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    # eval_train_loader = torch.utils.data.DataLoader(training_set, batch_size=args.batch_size * 2, drop_last=False)
-    eval_test_loader = torch.utils.data.DataLoader(test_set, batch_size=args.batch_size * 2, drop_last=False)
-    # optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
+    common_set_loader = torch.utils.data.DataLoader(test_common, batch_size=args.batch_size * 2, drop_last=False)
+    challenge_set_loader = torch.utils.data.DataLoader(test_challenge, batch_size=args.batch_size * 2, drop_last=False)
     optimizer = torch.optim.Adam([
-                {'params': net.hm_model.parameters(), 'lr': args.lr},
-                {'params': net.gcn_model.parameters(), 'lr': args.gcn_lr}
-            ])
+        {'params': net.hm_model.parameters(), 'lr': args.lr},
+        {'params': net.gcn_model.parameters(), 'lr': args.gcn_lr}
+    ])
 
     for epoch in range(1, args.epochs + 1):  # loop over the dataset multiple times
         print("Training epoch", epoch)
         train_one_epoch(net, optimizer, train_loader, epoch, device, args)
 
-        # print("Evaluating on training set")
-        # train_hm_loss, train_nme = run_evaluation(net, eval_train_loader, epoch, device, prefix="train")
-        # print("hm loss: {}, NME: {}".format(train_hm_loss, train_nme),
-        #       end="\n-------------------------------------------\n\n")
-
         print("Evaluating on testing set")
-        val_hm_loss, val_nme = run_evaluation(net, eval_test_loader, epoch, device, args, prefix="val")
-        print("hm loss: {}, NME: {}".format(val_hm_loss, val_nme),
+        val_hm_loss, val_nme = run_evaluation(net, common_set_loader, epoch, device, args, prefix="common")
+        print("common set: hm loss: {}, NME: {}".format(val_hm_loss, val_nme),
+              end="\n-------------------------------------------\n\n")
+        val_hm_loss, val_nme = run_evaluation(net, challenge_set_loader, epoch, device, args, prefix="challenge")
+        print("challenge set: hm loss: {}, NME: {}".format(val_hm_loss, val_nme),
               end="\n-------------------------------------------\n\n")
 
-        torch.save(net.state_dict(), "{}/HG_epoch_{}.pt".format(args.saved_folder, epoch))
+        torch.save(net.state_dict(), "{}/epoch_{}.pt".format(args.saved_folder, epoch))
 
     print('Finished Training')
     return net
@@ -295,5 +271,3 @@ if __name__ == '__main__':
     wandb.init(project="gnn-landmarks",
                config={**vars(args), **heatmap_model_config, **graph_model_config})
     main(args)
-
-

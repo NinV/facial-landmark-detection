@@ -6,7 +6,8 @@ from libs.models.networks.HRNet import get_face_alignment_net as get_HR_model
 
 
 class LandmarkModel(nn.Module):
-    def __init__(self, hm_model_config, gcn_config, device="cuda", use_hrnet=False, freeze_hm_model=False):
+    def __init__(self, hm_model_config, gcn_config, device="cuda", use_hrnet=False,
+                 freeze_hm_model=False, hrnet_config='face_alignment_300w_hrnet_w18.yaml'):
         """
         :param mode:
                     "fine_tune_graph": freeze heatmap model and train GCN model
@@ -17,7 +18,7 @@ class LandmarkModel(nn.Module):
         self.freeze_hm_model = freeze_hm_model
         self.device = device
         if use_hrnet:
-            self.hm_model = get_HR_model().to(self.device)
+            self.hm_model = get_HR_model(hrnet_config).to(self.device)
         else:
             self.hm_model = HGLandmarkModel(**hm_model_config, device=device).to(self.device)
         self.gcn_model = GCNLandmark(gcn_config).to(self.device)
