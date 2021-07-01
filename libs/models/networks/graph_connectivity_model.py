@@ -170,6 +170,7 @@ class GCNLandmark(nn.Module):
 
         self.to(self.device)
         self.pairs = self._generate_node_pairs()
+        self.edge_values = None
 
     def _generate_node_pairs(self):
         target_nodes_indices = list(range(self.num_classes))
@@ -205,7 +206,7 @@ class GCNLandmark(nn.Module):
 
         # normalizing edges
         edges_full = self.graph_norm(edges_full, dim=1)
-        # edges_full.transpose_(1, 0)     # transpose this edges because we're using F.linear instead of matmul
+        self.edge_values = edges_full
 
         # construct node features
         visual_embedding = self.visual_feature_embedding(visual_features)
