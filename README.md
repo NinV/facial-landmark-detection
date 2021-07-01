@@ -1,6 +1,61 @@
-Download weight for CNN backbone from this [link](https://drive.google.com/drive/folders/1sOXYoV_EIkdZRm0ROErQlmK-r-RG8m7o?usp=sharing)
-Pretrained for HRNet on ImageNet from this [link](https://github.com/HRNet/HRNet-Facial-Landmark-Detection)
-# Train data 300W and test COFW
-* Download data from COFW [Link](https://drive.google.com/file/d/1bL0wl8lGTt3083qcaUwUXYT3EYX2g6Zj/view?usp=sharing')
-* Download data from 300W [Link](https://ibug.doc.ic.ac.uk/resources/facial-point-annotations/)
-* Run : python train_hrnet.py  --model backbone -i '300W' --annotation '300W' --test_images //test_annotations --test_annotation /COFW_test_color.mat --save_best_only --dataset 300W_COFW
+# Description
+This is the official implementation of paper Landmark Detection with Learnable Connectivity Graph Convolutional Network
+
+# Dependencies
+Install these libraries with anaconda and pip
+1. pytorch 1.8.0 cuda10.2
+2. OpenCV 4.5.1
+3. scikit-learn
+4. easydict
+5. tqdm
+6. python 3.8
+7. yacs
+8. wandb
+
+Training data is saved using [wandb](https://wandb.ai). Follow the instruction to create an account and login.
+In case you don't want to log your training data to wandb, enable offline training option by using these command
+in terminal
+```bash
+wandb offline
+```
+# Pretrained model and datasets
+As 300W dataset is the combination of multiple datasets, we provide a single download link 
+for convenience.
+
+Download [WFLW dataset from here](https://wywu.github.io/projects/LAB/WFLW.html)
+
+Download the pretrained weights and 300W dataset from [here](https://drive.google.com/drive/folders/178j9f_OA3TwUEDxX0k_z2Ri2DiVA2-Ij?usp=sharing)
+
+
+
+
+# WFLW dataset
+## Training
+```bash
+python scripts/train_wfw -i [image folder] --annotation [traning annotation file] --test_images [image folder] --test_annotation [test annotation file] --augmentation
+```
+
+## Evaluating
+```bash
+python scripts/evaluate_wflw.py -i [image folder] --annotation [test annotation file] --weights [pretrained weights]
+```
+
+# 300W dataset
+## Training
+```bash
+python python scripts/train_300w.py --annotation [dataset folder]
+```
+
+## Evaluating
+```bash
+python scripts/evaluate_300w.py -i [image folder] --annotation [test annotation file] --weights [pretrained weights]
+```
+
+
+# Acknowledgement
+This repository reuse code from:
+* HRNet Facial Landmark Detection: https://github.com/HRNet/HRNet-Facial-Landmark-Detection
+* Objects as Points: https://github.com/xingyizhou/CenterNet
+
+# LICENSE
+Will be released under MIT License
