@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument("--show", action="store_true")
 
     # save config
-    parser.add_argument("-w", "--weights", default="saved_models/300W_weights/robust-planet-208_epoch_27.pt",
+    parser.add_argument("-w", "--weights", default="saved_models/pretrained_300W.pt",
                         help="path to saved weights")
     return parser.parse_args()
 

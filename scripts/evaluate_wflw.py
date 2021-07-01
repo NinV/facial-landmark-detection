@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument("--show", action="store_true")
 
     # save config
-    parser.add_argument("-s", "--weights", default="saved_models/graph_base_line/charmed-water-189-epoch_14.pt",
+    parser.add_argument("-w", "--weights", default="saved_models/pretrained_WFLW.pt",
                         help="path to saved weights")
     return parser.parse_args()
 
