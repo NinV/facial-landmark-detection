@@ -40,6 +40,12 @@ python scripts/train_wfw -i [image folder] --annotation [traning annotation file
 python scripts/evaluate_wflw.py -i [image folder] --annotation [test annotation file] --weights [pretrained weights]
 ```
 
+## Single image prediction
+```bash
+python scripts/visualize_prediction.py -i temp/test/20.png --edge
+```
+Use "--edge" to visualize connections between landmarks
+
 # 300W dataset
 ## Training
 ```bash
