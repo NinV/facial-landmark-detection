@@ -7,7 +7,7 @@
 # Stacked Hourglass https://github.com/princeton-vl/pytorch_stacked_hourglass
 # Copyright (c) 2019, princeton-vl
 # Licensed under the BSD 3-Clause License
-# modify by Nguyen Le Quan
+# modify by anonymous author
 # ------------------------------------------------------------------------------
 
 import torch

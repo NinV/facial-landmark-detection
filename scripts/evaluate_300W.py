@@ -1,8 +1,12 @@
 import argparse
 import pathlib
+import sys
+
+project_path = str(pathlib.Path(__file__).absolute().parents[1])
+sys.path.insert(0, project_path)
+
 import numpy as np
 import torch
-from PIL import Image
 from easydict import EasyDict as edict
 from scipy.integrate import simps
 from tqdm import tqdm
@@ -10,41 +14,27 @@ from tqdm import tqdm
 from libs.dataset.w300_dataset import W300_Dataset
 from libs.models.networks.models import LandmarkModel
 from libs.utils.metrics import compute_nme
-from libs.utils.image import mean_std_normalize, reverse_mean_std_normalize
-from model_config import *
+from libs.utils.image import mean_std_normalize
 
+heatmap_model_config = {"in_channels": 3,
+                        "num_classes": 68,
+                        "hg_dims": [[256, 256, 384], [384, 384, 512]],
+                        "downsample": True
+                        }
 
-class ResizeNotPadding:
-    def __init__(self, image_size, training=True):
-        self.image_size = image_size
-        self.training = training
+graph_model_config = {"num_classes": 68,
+                      "embedding_hidden_sizes": [32],
+                      "class_embedding_size": 1,
+                      "edge_hidden_size": 4,
+                      # "visual_feature_dim": 1920,     # Stacked Hourglass
+                      "visual_feature_dim": 270,  # HRNet18
+                      "visual_hidden_sizes": [512, 128, 32],
+                      "visual_embedding_size": 8,
+                      "GCN_dims": [64, 16],
+                      "self_connection": False,
+                      "graph_norm": "softmax",
+                      }
 
-    def __call__(self, img, kps):
-        # resized_img, ratio, (dw, dh) = letterbox(img, new_shape=(self.h, self.w), auto=not self.training)
-        # kps_resized = np.asarray(kps, dtype=np.float)
-        # kps_resized[:, :2] *= ratio  # ratio = [ratio_w, ratio_h]
-        # kps_resized[:, 0] += dw
-        # kps_resized[:, 1] += dh
-        h, w = img.shape[:2]
-        nw, nh = self.image_size
-        resized_img = np.array(Image.fromarray(img).resize(self.image_size))
-        scale_x = nw / w
-        scale_y = nh / h
-        kps_resized = np.asarray(kps, dtype=np.float)
-        kps_resized[:, :2] *= (scale_x,scale_y)
-
-        return resized_img, kps_resized, [scale_x, scale_y, 0, 0]
-
-    @staticmethod
-    def inverse_resize(kps, ratio, dw, dh):
-        if not isinstance(kps, np.ndarray):
-            kps_ = np.asarray(kps, dtype=np.float)
-        else:
-            kps_ = kps.copy()
-        kps_[:, 0] -= dw
-        kps_[:, 1] -= dh
-        kps_[:, :2] /= ratio
-        return kps_
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -56,7 +46,7 @@ def parse_args():
     parser.add_argument("--show", action="store_true")
 
     # save config
-    parser.add_argument("-w", "--weights", default="saved_models/300W_weights/robust-planet-208_epoch_27.pt",
+    parser.add_argument("-w", "--weights", default="saved_models/pretrained_300W.pt",
                         help="path to saved weights")
     return parser.parse_args()
 
@@ -72,11 +62,12 @@ def AUCError(errors, failureThreshold=0.1, step=0.0001):
     return failureRate, AUC
 
 
-def run_evaluation(net, dataset, device):
+def run_evaluation(net, dataset, device, subset_name="test"):
+    print("Evaluating subset {}".format(subset_name))
     net.eval()
     # running_nme_hm = 0
-    metrics_graph = {"test": [0, 0, 0]}
-    errors = {"test": []}
+    metrics_graph = {subset_name: [0, 0, 0]}
+    errors = {subset_name: []}
 
     with torch.no_grad():
         net.eval()
@@ -97,11 +88,11 @@ def run_evaluation(net, dataset, device):
             meta = {'pts': torch.tensor(gt_kps[:, :, :2])}
             nme_graph = np.sum(compute_nme(pred_kps_graph, meta), keepdims=False)
 
-            metrics_graph["test"][0] += nme_graph
-            metrics_graph["test"][2] += 1
-            errors["test"].append(nme_graph)
+            metrics_graph[subset_name][0] += nme_graph
+            metrics_graph[subset_name][2] += 1
+            errors[subset_name].append(nme_graph)
             if nme_graph > 0.1:
-                metrics_graph["test"][1] += 1
+                metrics_graph[subset_name][1] += 1
 
         for subset, (total_nme, num_failures, count) in metrics_graph.items():
             print("Subset {}, num_samples: {}\nNME: {}".format(subset, count, total_nme / count))
@@ -124,6 +115,7 @@ def main(args):
     net.eval()
     keypoint_label_names = list(range(heatmap_model_config["num_classes"]))
     root_folder = pathlib.Path(args.annotation)
+
     test_common = W300_Dataset(str(root_folder / "test_common"),
                                str(root_folder / "test_common"),
                                image_size=(args.image_size, args.image_size),
@@ -143,10 +135,19 @@ def main(args):
                                   crop_face_storing="temp/test_challenge",
                                   normalize_func=mean_std_normalize,
                                   hrnet_box=True)
-    # test_common.resize_func = ResizeNotPadding((256, 256))
-    # test_challenge.resize_func = ResizeNotPadding((256, 256))
-    nme1, auc1, fr1 = run_evaluation(net, test_common, device)
-    nme2, auc2, fr2 = run_evaluation(net, test_challenge, device)
+
+    test_official = W300_Dataset(str(root_folder / "300W_test"),
+                                 str(root_folder / "300W_test"),
+                                 image_size=(args.image_size, args.image_size),
+                                 keypoint_label_names=keypoint_label_names,
+                                 downsampling_factor=net.hm_model.downsampling_factor,
+                                 in_memory=args.in_memory,
+                                 crop_face_storing="temp/test_challenge",
+                                 normalize_func=mean_std_normalize,
+                                 hrnet_box=True)
+
+    nme1, auc1, fr1 = run_evaluation(net, test_common, device, subset_name="common")
+    nme2, auc2, fr2 = run_evaluation(net, test_challenge, device, subset_name="challenge")
 
     common, challenge = len(test_common), len(test_challenge)
     nme = (nme1 * common + nme2 * challenge) / (common + challenge)
@@ -154,6 +155,8 @@ def main(args):
     fr = (fr1 * common + fr2 * challenge) / (common + challenge)
     print("Subset {}, num_samples: {}\nNME: {}\nAUC0.1: {}\nFR0.1: {}".format("full",
                                                                               common + challenge, nme, auc, fr))
+
+    run_evaluation(net, test_official, device, subset_name="official test")
 
 
 if __name__ == '__main__':

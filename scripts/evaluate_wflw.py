@@ -1,9 +1,10 @@
-"""
-Train CNN backbone only
-"""
+import sys
 import argparse
+import pathlib
+project_path = str(pathlib.Path(__file__).absolute().parents[1])
+sys.path.insert(0, project_path)
+
 import numpy as np
-import cv2
 import torch
 from easydict import EasyDict as edict
 from scipy.integrate import simps
@@ -11,12 +12,29 @@ from tqdm import tqdm
 import pandas as pd
 
 from libs.dataset.wflw_dataset import WFLWDataset
-from libs.models.losses import heatmap_loss
 from libs.models.networks.models import LandmarkModel
 from libs.utils.metrics import compute_nme
-from libs.utils.image import mean_std_normalize, reverse_mean_std_normalize
-from model_config import *
+from libs.utils.image import mean_std_normalize
 
+
+heatmap_model_config = {"in_channels": 3,
+                        "num_classes": 98,
+                        "hg_dims": [[256, 256, 384], [384, 384, 512]],
+                        "downsample": True
+                        }
+
+graph_model_config = {"num_classes": 98,
+                      "embedding_hidden_sizes": [32],
+                      "class_embedding_size": 1,
+                      "edge_hidden_size": 4,
+                      # "visual_feature_dim": 1920,     # Stacked Hourglass
+                      "visual_feature_dim": 270,  # HRNet18
+                      "visual_hidden_sizes": [512, 128, 32],
+                      "visual_embedding_size": 8,
+                      "GCN_dims": [64, 16],
+                      "self_connection": False,
+                      "graph_norm": "softmax",
+                      }
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -29,7 +47,7 @@ def parse_args():
     parser.add_argument("--show", action="store_true")
 
     # save config
-    parser.add_argument("-s", "--weights", default="saved_models/graph_base_line/frosty-spaceship-175-epoch_19.pt",
+    parser.add_argument("-w", "--weights", default="saved_models/pretrained_WFLW.pt",
                         help="path to saved weights")
     return parser.parse_args()
 
@@ -106,7 +124,8 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # create network
-    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True)
+    net = LandmarkModel(heatmap_model_config, edict(graph_model_config), device, use_hrnet=True,
+                        hrnet_config="face_alignment_wflw_hrnet_w18.yaml")
     if args.weights:
         print("Load pretrained weight at:", args.weights)
         net.load_state_dict(torch.load(args.weights))
