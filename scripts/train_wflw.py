@@ -69,6 +69,9 @@ def parse_args():
     parser.add_argument("--gcn_lr", type=float, default=10e-3, help="gcn learning rate")
     parser.add_argument("--mode", help="Training mode: 0 - heatmap only, 1 - graph only, 2 - both")
     parser.add_argument("--regression_loss", default="L1", help="'L1' or 'L2'")
+    parser.add_argument("--heatmap_loss", default="Focal", help="'Focal' or 'MSE'")
+    parser.add_argument("--regression_loss_weight", default=1, type=float)
+    parser.add_argument("--hm_loss_weight", default=1.0, type=float)
     parser.add_argument("--freeze_hm", action="store_true")
 
     # augmentation
@@ -130,7 +133,8 @@ def train_one_epoch(net, optimizer, loader, epoch, device, opt):
         else:
             regression_loss = torch.nn.MSELoss(reduction="mean")(pred_kps, gt_kps[:, :, :2])
 
-        loss = hm_loss + regression_loss
+        # loss = hm_loss + regression_loss
+        loss = opt.hm_loss_weight * hm_loss + opt.regression_loss_weight * regression_loss
         loss.backward()
         optimizer.step()
         print("batch {}/{}, heat map loss: {}, regression loss: {}".format(i + 1, len(loader),
