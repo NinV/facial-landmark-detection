@@ -102,6 +102,7 @@ def get_augmentation(args):
 
 
 def train_one_epoch(net, optimizer, loader, epoch, device, opt):
+    net.train()
     for i, data in enumerate(loader):
         img, gt_kps, gt_hm, _ = data
         img = img.to(device, dtype=torch.float)
