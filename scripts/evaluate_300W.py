@@ -142,7 +142,7 @@ def main(args):
                                  keypoint_label_names=keypoint_label_names,
                                  downsampling_factor=net.hm_model.downsampling_factor,
                                  in_memory=args.in_memory,
-                                 crop_face_storing="temp/test_challenge",
+                                 crop_face_storing="temp/test_official",
                                  normalize_func=mean_std_normalize,
                                  hrnet_box=True)
 
