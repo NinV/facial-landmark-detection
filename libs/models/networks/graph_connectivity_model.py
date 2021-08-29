@@ -56,15 +56,24 @@ class ClassEmbedding(nn.Module):
 
 
 class EdgeWeights(nn.Module):
-    def __init__(self, embedding_size=1, hidden=4):
+    def __init__(self, class_embedding_size, hidden_sizes):
         super(EdgeWeights, self).__init__()
-        self.linear = Linear(embedding_size + 2, hidden, activation="relu")
-        self.out = Linear(hidden, 1, activation="relu")
+        layers = []
+        # self.linear = Linear(embedding_size + 2, hidden, activation="relu")
+        current_dim = class_embedding_size + 2      # +2 for pair of node confidences
+        for h in hidden_sizes:
+            layers.append(Linear(current_dim, h, activation="relu"))
+            current_dim = h
+        self.hidden_layers = nn.ModuleList(layers)
+        self.out = Linear(current_dim, 1, activation="relu")
 
     def forward(self, x):
-        x = self.linear(x)
-        x = self.out(x)
-        return x
+        # x = self.linear(x)
+        # x = self.out(x)
+        for layer in self.hidden_layers:
+            x = layer(x)
+        out = self.out(x)
+        return out
 
 
 class VisualFeatureEmbedding(nn.Module):

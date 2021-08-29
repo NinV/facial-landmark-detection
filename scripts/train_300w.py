@@ -31,7 +31,7 @@ heatmap_model_config = {"in_channels": 3,
 graph_model_config = {"num_classes": 68,
                       "embedding_hidden_sizes": [32],
                       "class_embedding_size": 1,
-                      "edge_hidden_size": 4,
+                      "edge_hidden_size": [128, 64, 64],
                       # "visual_feature_dim": 1920,     # Stacked Hourglass
                       "visual_feature_dim": 270,  # HRNet18
                       "visual_hidden_sizes": [512, 128, 32],
